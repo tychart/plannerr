@@ -24,38 +24,39 @@ Greenfield self-hostable assignment-tracker web app ("Plannerr"). The repo curre
 | Class colors | Store hex string `#RRGGBB`; render-time contrast computation; UI = 8–10 swatches + native `<input type="color">` wheel |
 | Home list | Continuous list sorted by `due_at` ASC, day headers, **"Overdue" group at top**; completed stay in date position, styled complete, hide/show toggle |
 | Loading more | True infinite scroll, cursor (keyset) pagination, IntersectionObserver sentinel |
-| 7-day window | First page = everything due within next 7 days (incl. overdue); scrolling loads older |
+| 7-day window | First page = everything due within next 7 days (incl. overdue); scrolling loads older. *(Future: may add a first-page `limit` if a dense week warrants it — keyset pagination already supports this; not in v1.)* |
 | Assignment editing | Quick-add **modal on Home** + dedicated **route** `/assignments/:id` (full editing, markdown notes, links) — same shared form component |
 | Notes | Markdown-lite, rendered via `react-markdown` + `remark-gfm` + `rehype-sanitize`; raw markdown stored |
 | Links | Per-assignment URLs with **optional label**, multiple allowed → `assignment_links` table |
 | First run | Auto-create "Default" class; friendly guided empty state |
-| Testing | Backend pytest (auth + assignments + classes); frontend a few Vitest unit tests |
-| Docker | Frontend = nginx serving static build + `/api` reverse proxy → backend; exposed on **8080**. Backend + DB internal only |
+| Testing | Server pytest (auth + assignments + classes); web a few Vitest unit tests |
+| Docker | `web` = nginx serving static build + `/api` reverse proxy → `server`; exposed on **8080**. `server` + DB internal only |
 
 ---
 
 ## Architecture overview
 
 ```
-Browser ── :8080 ──► frontend (nginx:alpine)
+Browser ── :8080 ──► web (nginx:alpine)
                         │  /api/*  (reverse proxy, same-origin → cookies "just work")
                         ▼
-                     backend (uvicorn :8000)   ── SQLAlchemy 2.0 async ──► db (postgres:18)
+                     server (uvicorn :8000)   ── SQLAlchemy 2.0 async ──► db (postgres:18)
 ```
 
 - **Same-origin** via nginx proxy ⇒ no CORS, no CSRF token ceremony (SameSite=Lax cookie). Keep it that way.
-- Backend container runs `alembic upgrade head` before starting uvicorn (migrations run automatically on boot).
-- Three services only: `frontend`, `backend`, `db`.
+- The `server` container runs `alembic upgrade head` before starting uvicorn (migrations run automatically on boot).
+- Three services only: `web`, `server`, `db` — the `web`/`server` containers are production-only.
+- **Dev loop:** Postgres always runs in Docker (`docker compose up db`); Python (`uv`) and React (Vite) run locally. See *Docker + uv → Local dev*.
 
 ### Repository layout (monorepo)
 
 ```
 plannerr/
 ├── docker-compose.yml
-├── .env.example                  # compose + backend secrets
+├── .env.example                  # compose + server secrets
 ├── .gitignore
 ├── README.md                     # setup + dev instructions
-├── backend/
+├── server/
 │   ├── pyproject.toml            # uv project (moved from repo root)
 │   ├── uv.lock
 │   ├── Dockerfile
@@ -83,7 +84,7 @@ plannerr/
 │       ├── test_auth.py
 │       ├── test_classes.py
 │       └── test_assignments.py
-└── frontend/
+└── web/
     ├── package.json
     ├── vite.config.ts            # @tailwindcss/vite + /api dev proxy → :8000
     ├── tsconfig.json
@@ -98,7 +99,7 @@ plannerr/
         ├── lib/
         │   ├── api.ts            # typed fetch wrapper (credentials, errors)
         │   ├── queryClient.ts
-        │   ├── types.ts          # mirrors backend schemas
+        │   ├── types.ts          # mirrors server schemas
         │   ├── dates.ts          # day grouping, date-only handling, formatting
         │   └── color.ts          # contrast/readability helpers for class hex
         ├── features/
@@ -125,7 +126,7 @@ plannerr/
         └── routes.tsx
 ```
 
-**Cleanup:** the placeholder root `main.py`, `pyproject.toml`, `uv.lock`, `.python-version`, `.venv` are absorbed into `backend/` (delete stubs, `uv init --app backend`-style structure). Repo root becomes compose + docs only.
+**Cleanup:** the placeholder root `main.py`, `pyproject.toml`, `uv.lock`, `.python-version`, `.venv` are absorbed into `server/` (delete stubs, `uv init --app server`-style structure). Repo root becomes compose + docs only.
 
 ---
 
@@ -194,7 +195,7 @@ Index on `assignment_id`.
 
 ---
 
-## Backend design
+## Server design (FastAPI)
 
 ### Stack
 - **FastAPI** + **Pydantic v2** + **SQLAlchemy 2.0 async** (declarative) + **Alembic** (async migrations) + **psycopg 3** async driver (`postgresql+psycopg://`) — SQLAlchemy's currently recommended async driver.
@@ -231,14 +232,14 @@ Index on `assignment_id`.
 Pydantic validation: title 1–200 chars, progress multiple of 5 in 0–100, color regex, url `AnyHttpUrl`, links max ~5, class must belong to the user (404 otherwise — never leak other users' existence).
 
 ### Home pagination (keyset / cursor)
-- **No cursor** → return ALL assignments where `progress < 100 OR include_completed` **and** `due_at < now + 7 days` (overdue included automatically by `due_at < now`), ordered `due_at ASC, id ASC`. (Safety cap e.g. 500.)
+- **No cursor** → return ALL assignments where `progress < 100 OR include_completed` **and** `due_at < now + 7 days` (overdue included automatically by `due_at < now`), ordered `due_at ASC, id ASC`. (Safety cap e.g. 500.) *(Future: if a dense week ever needs a hard cap on the first page, adding a `limit` param is a one-line change — the keyset cursor already generalizes. Not implemented in v1.)*
 - **With cursor** → `WHERE (due_at, id) < (cursor_due, cursor_id)` (keyset), same ordering, `LIMIT 25`, return `next_cursor` (`base64("due_at|id")`) or `null`.
 - Response: `{items: [...], next_cursor: string|null}`.
 - Completed assignments stay in the list at their date position; client styles them; "hide completed" toggle is a query param + UI state.
 
 ---
 
-## Frontend design
+## Web design (React)
 
 ### Stack
 - **Vite** + **React 19** + **TypeScript** (strict) + **Tailwind v4** (`@tailwindcss/vite`).
@@ -274,17 +275,17 @@ Pydantic validation: title 1–200 chars, progress multiple of 5 in 0–100, col
 
 ## Docker + uv
 
-### `backend/Dockerfile` (multi-stage, uv-native)
+### `server/Dockerfile` (multi-stage, uv-native)
 - Stage 1: `ghcr.io/astral-sh/uv:python3.14-slim` — copy `pyproject.toml` + `uv.lock`, `uv sync --frozen --no-dev --no-install-project`, copy app.
 - Final: slim image, `uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000`.
 
-### `frontend/Dockerfile` (multi-stage)
-- Stage 1: `node:22-alpine`, `npm ci`, `npm run build`.
+### `web/Dockerfile` (multi-stage)
+- Stage 1: `node:26-alpine`, `npm ci`, `npm run build`.
 - Stage 2: `nginx:alpine`, copy `dist/` + `nginx.conf`.
 
 ### `nginx.conf` essentials
 - Serve static from `/usr/share/nginx/html`, SPA fallback to `index.html`.
-- `location /api/ { proxy_pass http://backend:8000; }` (+ websocket not needed in v1).
+- `location /api/ { proxy_pass http://server:8000; }` (+ websocket not needed in v1).
 
 ### `docker-compose.yml`
 ```yaml
@@ -294,46 +295,46 @@ services:
     environment: { POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB }
     volumes: [pgdata:/var/lib/postgresql]   # Postgres 18 moved PGDATA under /var/lib/postgresql/18/docker
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"], interval: 5s, retries: 10 }
-  backend:
-    build: ./backend
+  server:
+    build: ./server
     env_file: .env                          # DATABASE_URL, PASSWORD_PEPPER, COOKIE_SECURE=true
     environment: { DATABASE_URL: postgresql+psycopg://...@db:5432/plannerr }
     depends_on: { db: { condition: service_healthy } }
     expose: ["8000"]                        # internal only
-  frontend:
-    build: ./frontend
+  web:
+    build: ./web
     ports: ["8080:80"]
-    depends_on: [backend]
+    depends_on: [server]
 volumes: { pgdata: }
 ```
 - Root `.env.example` documents `POSTGRES_*`, `DATABASE_URL`, `PASSWORD_PEPPER` (required secret), `COOKIE_SECURE`.
-- **Local dev** (no Docker): `uv run uvicorn ... --reload` (backend, `DATABASE_URL` → local Postgres or `docker compose up db`), `npm run dev` (frontend, Vite proxies `/api` → `:8000`).
+- **Local dev** (Postgres always in Docker): `docker compose up db`; run the server locally with `uv run uvicorn app.main:app --reload --port 8000` (point `DATABASE_URL` at `localhost:5432`); run the web app locally with `npm run dev` (Vite proxies `/api` → `:8000`). Production uses all three compose services.
 
 ---
 
 ## Reuse / dependencies (curated, no duplication)
 
-- **Backend:** FastAPI, SQLAlchemy 2.0 + psycopg3, Alembic, argon2-cffi, pydantic + pydantic-settings, slowapi. Dev/test: pytest, pytest-asyncio, httpx.
-- **Frontend:** Vite, React 19, react-router, TanStack Query, Radix (Dialog/Slider/Switch), react-hook-form + zod, react-markdown + remark-gfm + rehype-sanitize, date-fns, lucide-react, Tailwind v4.
+- **Server:** FastAPI, SQLAlchemy 2.0 + psycopg3, Alembic, argon2-cffi, pydantic + pydantic-settings, slowapi. Dev/test: pytest, pytest-asyncio, httpx.
+- **Web:** Vite, React 19, react-router, TanStack Query, Radix (Dialog/Slider/Switch), react-hook-form + zod, react-markdown + remark-gfm + rehype-sanitize, date-fns, lucide-react, Tailwind v4.
 - One shared `AssignmentForm` (dialog + page), one `AssignmentCard`, one `ColorPicker` — no duplicated form/card logic.
 
 ---
 
 ## Steps (implementation checklist)
 
-- [ ] **Repo restructure** — delete placeholder root `main.py`/`pyproject.toml`/`uv.lock`/`.python-version`; scaffold `backend/` with `uv init --app`; add `.gitignore`, `README.md`, `.env.example`.
-- [ ] **Backend skeleton** — `pyproject.toml` deps; `config.py` (pydantic-settings); `db.py` (async engine/session); `main.py` app factory.
+- [ ] **Repo restructure** — delete placeholder root `main.py`/`pyproject.toml`/`uv.lock`/`.python-version`; scaffold `server/` with `uv init --app`; add `.gitignore`, `README.md`, `.env.example`.
+- [ ] **Server skeleton** — `pyproject.toml` deps; `config.py` (pydantic-settings); `db.py` (async engine/session); `main.py` app factory.
 - [ ] **Models + migration** — `models.py` (users, sessions, classes, assignments, assignment_links as specced); Alembic async env; `0001_create_tables`.
 - [ ] **Security + auth** — `security.py` (argon2 + pepper, token gen/hash, password policy); sessions; `routers/auth.py`; `deps.get_current_user`; register auto-creates "Default" class.
 - [ ] **Classes API** — CRUD + `delete-preview` + transfer-on-delete; scoped to user; validation (hex, name, uniqueness).
 - [ ] **Assignments API** — CRUD incl. nested `links[]`; cursor pagination; progress `% 5` validation; `include_completed` filter.
-- [ ] **Backend tests** — pytest-asyncio against a test Postgres DB (alembic-upgraded); auth (register/login/logout/me/rate-limit), classes (CRUD, transfer/delete), assignments (CRUD, pagination, progress rules).
-- [ ] **Frontend scaffold** — Vite + React + TS strict + Tailwind v4 (`@custom-variant dark`, semantic tokens, `@theme inline`); ESLint/Prettier; `lib/api.ts`, `lib/types.ts`.
+- [ ] **Server tests** — pytest-asyncio against a test Postgres DB (alembic-upgraded); auth (register/login/logout/me/rate-limit), classes (CRUD, transfer/delete), assignments (CRUD, pagination, progress rules).
+- [ ] **Web scaffold** — Vite + React + TS strict + Tailwind v4 (`@custom-variant dark`, semantic tokens, `@theme inline`); ESLint/Prettier; `lib/api.ts`, `lib/types.ts`.
 - [ ] **Theme + auth UI** — ThemeProvider (+ anti-FOUC script), header toggle; Login/Register pages; AuthProvider + route guards; `/auth/me` boot.
 - [ ] **Classes UI** — ClassConfigPage, ClassForm, ColorPicker (swatches + wheel), ClassDeleteDialog with transfer-or-delete.
 - [ ] **Assignments UI** — HomePage (overdue group, day groups, infinite scroll sentinel, hide/show completed), AssignmentCard, ProgressSlider (step 5), AssignmentDialog (quick-add + edit + convenience buttons), AssignmentPage + shared AssignmentForm, NotesEditor/NotesView (markdown), AssignmentLinks.
-- [ ] **Frontend tests** — Vitest: `dates.ts` grouping/date-only logic, `color.ts` contrast, progress snapping helper.
-- [ ] **Docker** — backend Dockerfile (uv), frontend Dockerfile + nginx.conf, docker-compose.yml (3 services, healthcheck, volume), `.env.example`.
+- [ ] **Web tests** — Vitest: `dates.ts` grouping/date-only logic, `color.ts` contrast, progress snapping helper.
+- [ ] **Docker** — server Dockerfile (uv), web Dockerfile + nginx.conf, docker-compose.yml (3 services, healthcheck, volume), `.env.example`.
 - [ ] **Polish + docs** — empty states, responsive/mobile pass, README (setup, dev, deploy, env vars), final end-to-end verification.
 
 ---
@@ -349,7 +350,7 @@ volumes: { pgdata: }
 7. Dark mode: toggle in header persists across reload (localStorage); with `system` it follows OS; no white flash on load.
 8. Delete a class with assignments → dialog lists them → transfer to another class works; deleting without transfer cascades.
 9. Logout → cookie cleared, protected routes redirect to login; expired/unknown session → 401 → redirect.
-10. Backend: `uv run pytest` green. Frontend: `npm run test`, `npm run lint`, `npx tsc --noEmit`, `npm run build` green.
+10. Server: `uv run pytest` green. Web: `npm run test`, `npm run lint`, `npx tsc --noEmit`, `npm run build` green.
 11. Mobile pass: responsive layout, usable slider + modals on a narrow viewport.
 
 ---

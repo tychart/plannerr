@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+/* Class-based dark mode: toggling `.dark` on <html> flips every dark: utility
+   and the semantic tokens below. Defaults to the OS preference via JS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Semantic color tokens (light) ─────────────────────────────────────── */
+:root {
+  --background: oklch(0.99 0.002 80);
+  --foreground: oklch(0.21 0.006 260);
+  --surface: oklch(0.965 0.004 80);
+  --surface-2: oklch(0.93 0.005 80);
+  --muted: oklch(0.55 0.01 260);
+  --border: oklch(0.9 0.005 80);
+  --primary: oklch(0.51 0.24 277);
+  --primary-foreground: oklch(0.99 0.002 80);
+  --primary-soft: oklch(0.93 0.03 277);
+  --danger: oklch(0.55 0.23 27);
+  --danger-soft: oklch(0.95 0.03 27);
+  --success: oklch(0.55 0.15 150);
+  --warning: oklch(0.6 0.16 65);
+  --ring: oklch(0.51 0.24 277 / 0.35);
+}
+
+/* ── Semantic color tokens (dark) ──────────────────────────────────────── */
+.dark {
+  --background: oklch(0.17 0.008 260);
+  --foreground: oklch(0.94 0.005 80);
+  --surface: oklch(0.21 0.009 260);
+  --surface-2: oklch(0.26 0.01 260);
+  --muted: oklch(0.68 0.012 260);
+  --border: oklch(0.28 0.01 260);
+  --primary: oklch(0.68 0.17 277);
+  --primary-foreground: oklch(0.18 0.02 277);
+  --primary-soft: oklch(0.28 0.05 277);
+  --danger: oklch(0.7 0.17 27);
+  --danger-soft: oklch(0.28 0.05 27);
+  --success: oklch(0.75 0.14 150);
+  --warning: oklch(0.8 0.14 65);
+  --ring: oklch(0.68 0.17 277 / 0.45);
+}
+
+/* Map tokens into Tailwind's color system via `@theme inline` so utilities
+   like bg-background / text-foreground flip automatically with `.dark`. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "Helvetica Neue",
+      Arial,
+      sans-serif;
+  }
+}
+
+@layer components {
+  /* Rendered markdown notes */
+  .markdown {
+    @apply text-sm leading-relaxed text-foreground;
+  }
+  .markdown > * + * {
+    @apply mt-3;
+  }
+  .markdown h1,
+  .markdown h2,
+  .markdown h3 {
+    @apply font-semibold;
+  }
+  .markdown h1 {
+    @apply text-lg;
+  }
+  .markdown h2 {
+    @apply text-base;
+  }
+  .markdown ul {
+    @apply list-disc pl-5;
+  }
+  .markdown ol {
+    @apply list-decimal pl-5;
+  }
+  .markdown a {
+    @apply text-primary underline;
+  }
+  .markdown code {
+    @apply rounded bg-surface-2 px-1 py-0.5 font-mono text-[0.85em];
+  }
+  .markdown pre {
+    @apply overflow-x-auto rounded-lg bg-surface-2 p-3;
+  }
+  .markdown pre code {
+    @apply bg-transparent p-0;
+  }
+  .markdown blockquote {
+    @apply border-l-2 border-border pl-3 text-muted;
+  }
+  .markdown table {
+    @apply w-full border-collapse text-sm;
+  }
+  .markdown th,
+  .markdown td {
+    @apply border border-border px-2 py-1 text-left;
+  }
+  .markdown hr {
+    @apply border-border;
+  }
+}
