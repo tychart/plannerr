@@ -16,17 +16,32 @@ from app.db import get_db
 from app.deps import get_current_user
 from app.models import PushSubscription, User
 from app.ratelimit import limiter
-from app.schemas import PushSubscriptionIn, TestNotificationIn, TestNotificationOut
-from app.services.summary import send_daily_summary
+from app.schemas import (
+    CustomNotificationIn,
+    CustomNotificationOut,
+    PushSubscriptionIn,
+    TestNotificationIn,
+    TestNotificationOut,
+)
+from app.services.summary import (
+    LLMUnavailableError,
+    send_custom_notification,
+    send_daily_summary,
+)
 
 router = APIRouter()
 settings = get_settings()
 
 
 @router.get("/vapid-public-key")
-async def vapid_public_key() -> dict[str, str]:
-    """Public VAPID key for subscribing. Empty string ⇒ notifications disabled."""
-    return {"public_key": settings.vapid_public_key}
+async def vapid_public_key() -> dict[str, str | bool]:
+    """Notification capabilities: the public VAPID key for subscribing
+    (empty ⇒ notifications disabled) and whether the LLM is configured.
+    """
+    return {
+        "public_key": settings.vapid_public_key,
+        "llm_configured": bool(settings.llm_base_url),
+    }
 
 
 @router.post("/subscribe", status_code=status.HTTP_201_CREATED)
@@ -90,3 +105,38 @@ async def send_test(
             detail="No devices are set up for notifications yet — enable them in Settings first.",
         )
     return await send_daily_summary(user, db, payload.timezone)
+
+
+@router.post("/test-llm", response_model=CustomNotificationOut)
+@limiter.limit(settings.rate_limit_notifications)
+async def send_test_llm(
+    request: Request,
+    payload: CustomNotificationIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CustomNotificationOut:
+    """Send a custom notification whose body is written by the LLM."""
+    if not settings.llm_base_url:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "AI notifications are off — set LLM_BASE_URL (and LLM_API_KEY if needed) "
+                "in the server's .env, then restart the server."
+            ),
+        )
+    device_count = await db.scalar(
+        select(func.count())
+        .select_from(PushSubscription)
+        .where(PushSubscription.user_id == user.id)
+    )
+    if not device_count:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No devices are set up for notifications yet — enable them in Settings first.",
+        )
+    try:
+        return await send_custom_notification(user, db, payload.message)
+    except LLMUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc

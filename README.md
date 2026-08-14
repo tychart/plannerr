@@ -150,6 +150,10 @@ that generates today's summary and pushes it to every device you've enrolled.
 The notification body is written by an LLM (1–3 short sentences); if the LLM is
 unconfigured or unreachable, a built-in deterministic summary is used instead.
 
+**Settings → Custom AI notification** is a second test button: type anything and
+the LLM rewrites it into a friendly push notification. It requires the LLM to be
+configured — otherwise the button is greyed out with the reason shown.
+
 Setup is two optional env blocks (see the table above):
 
 ```bash

@@ -26,7 +26,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.models import Assignment, PushSubscription, User
-from app.schemas import TestNotificationOut
+from app.schemas import CustomNotificationOut, TestNotificationOut
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +41,20 @@ SYSTEM_PROMPT = (
     "Keep it under 280 characters."
 )
 
+CUSTOM_SYSTEM_PROMPT = (
+    "You write short, friendly push notifications for a personal app. "
+    "Rewrite the user's message into 1-2 warm sentences. "
+    "Plain text only — no markdown, no bullet lists, no emoji. "
+    "Keep the user's intent exactly; do not add information that isn't there. "
+    "Keep it under 200 characters."
+)
+
 MAX_TOKENS = 160
 TEMPERATURE = 0.7
+
+
+class LLMUnavailableError(RuntimeError):
+    """Raised when the LLM cannot be used (not configured or unreachable)."""
 
 
 def _today_bounds(tz_name: str) -> tuple[datetime, datetime, datetime]:
@@ -120,8 +132,8 @@ def _fallback_summary(items: list[dict]) -> str:
     return "Good morning! Nothing is due today — a great day to get ahead."
 
 
-async def _llm_summary(items: list[dict], today_str: str) -> str:
-    """Call the configured OpenAI-compatible chat-completions endpoint."""
+async def _chat_completion(messages: list[dict[str, str]]) -> str:
+    """POST ``messages`` to the configured OpenAI-compatible endpoint; return text."""
     settings = get_settings()
     url = settings.llm_base_url.rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
@@ -129,15 +141,7 @@ async def _llm_summary(items: list[dict], today_str: str) -> str:
         headers["Authorization"] = f"Bearer {settings.llm_api_key}"
     payload = {
         "model": settings.llm_model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {"today": today_str, "assignments": items}, ensure_ascii=False
-                ),
-            },
-        ],
+        "messages": messages,
         "max_tokens": MAX_TOKENS,
         "temperature": TEMPERATURE,
     }
@@ -146,6 +150,67 @@ async def _llm_summary(items: list[dict], today_str: str) -> str:
         resp.raise_for_status()
         data = resp.json()
     return data["choices"][0]["message"]["content"].strip()
+
+
+async def _llm_summary(items: list[dict], today_str: str) -> str:
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": json.dumps(
+                {"today": today_str, "assignments": items}, ensure_ascii=False
+            ),
+        },
+    ]
+    return await _chat_completion(messages)
+
+
+def _llm_error_detail(exc: Exception) -> str:
+    """Short, human-readable cause for an LLM call failure (for error messages)."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        body = exc.response.text.strip()[:160]
+        return f"HTTP {exc.response.status_code}" + (f" — {body}" if body else "")
+    if isinstance(exc, httpx.ConnectError):
+        return (
+            "connection refused — is the LLM host reachable from the server container? "
+            "On Podman/Docker try host.containers.internal or the host's LAN IP"
+        )
+    if isinstance(exc, httpx.ConnectTimeout):
+        return "connection timed out"
+    if isinstance(exc, httpx.TimeoutException):
+        return "timed out"
+    if isinstance(exc, httpx.HTTPError):
+        return str(exc)[:200]
+    return f"{type(exc).__name__}: {exc}"[:200]
+
+
+async def generate_custom_notification(message: str) -> str:
+    """Ask the LLM to turn ``message`` into a friendly notification body.
+
+    Raises ``LLMUnavailableError`` when the LLM is unconfigured or unreachable.
+    """
+    settings = get_settings()
+    if not settings.llm_base_url:
+        raise LLMUnavailableError(
+            "AI notifications are off — set LLM_BASE_URL (and LLM_API_KEY if needed) "
+            "in the server's .env, then restart the server."
+        )
+    try:
+        text = await _chat_completion(
+            [
+                {"role": "system", "content": CUSTOM_SYSTEM_PROMPT},
+                {"role": "user", "content": message},
+            ]
+        )
+    except Exception as exc:
+        url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+        logger.exception("Custom LLM notification failed (url=%s)", url)
+        raise LLMUnavailableError(
+            f"Couldn't reach the LLM at {url} — {_llm_error_detail(exc)}"
+        ) from exc
+    if not text:
+        raise LLMUnavailableError("The LLM returned an empty response — try again.")
+    return text[:500]
 
 
 async def generate_summary(
@@ -164,11 +229,59 @@ async def generate_summary(
     return _fallback_summary(items), "fallback"
 
 
+async def _push_to_subscriptions(user: User, db: AsyncSession, payload: dict) -> int:
+    """Deliver ``payload`` to every device the user has registered.
+
+    Prunes dead subscriptions (HTTP 404/410) and returns how many pushes
+    were delivered successfully.
+    """
+    settings = get_settings()
+    subscriptions = list(
+        (
+            await db.execute(
+                select(PushSubscription).where(PushSubscription.user_id == user.id)
+            )
+        ).scalars()
+    )
+    if not subscriptions:
+        return 0
+
+    from pywebpush import WebPushException, webpush  # heavy import, only when sending
+
+    payload_json = json.dumps(payload)
+    delivered = 0
+    for sub in subscriptions:
+        try:
+            # webpush() is sync (uses requests) — run it off the event loop.
+            await asyncio.to_thread(
+                webpush,
+                subscription_info={
+                    "endpoint": sub.endpoint,
+                    "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
+                },
+                data=payload_json,
+                vapid_private_key=settings.vapid_private_key,
+                vapid_claims={"sub": settings.vapid_subject},
+                timeout=10,
+            )
+            delivered += 1
+        except WebPushException as exc:
+            status_code = getattr(exc.response, "status_code", None)
+            if status_code in (404, 410):
+                logger.info("Pruning dead push subscription (%s): %s", status_code, sub.endpoint)
+                await db.execute(delete(PushSubscription).where(PushSubscription.id == sub.id))
+            else:
+                logger.warning("Push to %s failed: %s", sub.endpoint, exc)
+        except Exception:
+            logger.exception("Unexpected push error for %s", sub.endpoint)
+    await db.commit()
+    return delivered
+
+
 async def send_daily_summary(
     user: User, db: AsyncSession, tz_name: str
 ) -> TestNotificationOut:
     """Build today's summary for ``user`` and push it to all their devices."""
-    settings = get_settings()
     local_now, start_utc, end_utc = _today_bounds(tz_name)
     tz = local_now.tzinfo
 
@@ -188,49 +301,32 @@ async def send_daily_summary(
     today_str = local_now.strftime("%A, %B %-d, %Y")
     summary, source = await generate_summary(items, today_str)
 
-    subs = (
-        await db.execute(select(PushSubscription).where(PushSubscription.user_id == user.id))
-    ).scalars()
-    subscriptions = list(subs)
-    if not subscriptions:
-        return TestNotificationOut(device_count=0, summary=summary, source=source)
-
-    from pywebpush import WebPushException, webpush  # heavy import, only when sending
-
-    payload = json.dumps(
+    delivered = await _push_to_subscriptions(
+        user,
+        db,
         {
             "title": "Your day in Plannerr",
             "body": summary,
             "url": "/",
             "tag": "plannerr-daily",
-        }
+        },
     )
-
-    delivered = 0
-    for sub in subscriptions:
-        try:
-            # webpush() is sync (uses requests) — run it off the event loop.
-            await asyncio.to_thread(
-                webpush,
-                subscription_info={
-                    "endpoint": sub.endpoint,
-                    "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
-                },
-                data=payload,
-                vapid_private_key=settings.vapid_private_key,
-                vapid_claims={"sub": settings.vapid_subject},
-                timeout=10,
-            )
-            delivered += 1
-        except WebPushException as exc:
-            status_code = getattr(exc.response, "status_code", None)
-            if status_code in (404, 410):
-                logger.info("Pruning dead push subscription (%s): %s", status_code, sub.endpoint)
-                await db.execute(delete(PushSubscription).where(PushSubscription.id == sub.id))
-            else:
-                logger.warning("Push to %s failed: %s", sub.endpoint, exc)
-        except Exception:
-            logger.exception("Unexpected push error for %s", sub.endpoint)
-    await db.commit()
-
     return TestNotificationOut(device_count=delivered, summary=summary, source=source)
+
+
+async def send_custom_notification(
+    user: User, db: AsyncSession, message: str
+) -> CustomNotificationOut:
+    """Turn ``message`` into a custom LLM notification and push it to devices."""
+    body = await generate_custom_notification(message)
+    delivered = await _push_to_subscriptions(
+        user,
+        db,
+        {
+            "title": "Plannerr",
+            "body": body,
+            "url": "/",
+            "tag": "plannerr-custom",
+        },
+    )
+    return CustomNotificationOut(device_count=delivered, body=body)

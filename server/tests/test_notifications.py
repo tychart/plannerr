@@ -36,7 +36,8 @@ async def _subscription_count() -> int:
 async def test_vapid_public_key_is_public(client: AsyncClient) -> None:
     r = await client.get("/api/v1/notifications/vapid-public-key")
     assert r.status_code == 200
-    assert r.json() == {"public_key": "test-vapid-public"}
+    # LLM_BASE_URL is unset in the test env, so llm_configured is False.
+    assert r.json() == {"public_key": "test-vapid-public", "llm_configured": False}
 
 
 async def test_subscribe_requires_auth(client: AsyncClient) -> None:
@@ -189,3 +190,73 @@ async def test_generate_summary_falls_back_when_llm_fails(monkeypatch) -> None:
     text_body, source = await summary.generate_summary([], "Tuesday, January 2")
     assert source == "fallback"
     assert "Nothing is due today" in text_body
+
+
+async def test_test_llm_requires_auth(client: AsyncClient) -> None:
+    r = await client.post("/api/v1/notifications/test-llm", json={"message": "hi"})
+    assert r.status_code == 401
+
+
+async def test_test_llm_unconfigured_conflicts(client: AsyncClient) -> None:
+    """With no LLM_BASE_URL the endpoint explains why instead of sending."""
+    await register(client)
+    r = await client.post("/api/v1/notifications/test-llm", json={"message": "hi"})
+    assert r.status_code == 409
+    assert "LLM_BASE_URL" in r.json()["detail"]
+
+
+async def test_test_llm_sends_custom_notification(
+    client: AsyncClient, monkeypatch
+) -> None:
+    """With the LLM configured, a custom notification is generated and pushed."""
+    await register(client)
+    await client.post("/api/v1/notifications/subscribe", json=_subscribe_payload())
+
+    from app.routers import notifications as notifications_router
+    from app.services import summary
+
+    class FakeSettings:
+        llm_base_url = "http://localhost:4000/v1"
+        llm_api_key = ""
+        llm_model = "some-model"
+        llm_timeout_seconds = 5.0
+        vapid_private_key = "test-vapid-private"
+        vapid_subject = "mailto:test@example.com"
+
+    monkeypatch.setattr(summary, "get_settings", lambda: FakeSettings())
+    # The router's module-level settings gate the LLM check before calling the service.
+    monkeypatch.setattr(notifications_router, "settings", FakeSettings())
+
+    fake_response = httpx.Response(
+        200,
+        json={
+            "choices": [
+                {"message": {"content": "Reminder set — enjoy your evening!"}}
+            ]
+        },
+        request=httpx.Request("POST", "http://localhost:4000/v1/chat/completions"),
+    )
+    fake_client = AsyncMock()
+    fake_client.__aenter__.return_value = fake_client
+    fake_client.post.return_value = fake_response
+    monkeypatch.setattr(
+        summary, "httpx", SimpleNamespace(AsyncClient=lambda **kw: fake_client)
+    )
+
+    sent = []
+
+    def fake_webpush(**kwargs) -> None:
+        sent.append(kwargs)
+
+    monkeypatch.setattr("pywebpush.webpush", fake_webpush)
+
+    r = await client.post(
+        "/api/v1/notifications/test-llm",
+        json={"message": "Remind me to review Chapter 4 tonight"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["device_count"] == 1
+    assert body["body"] == "Reminder set — enjoy your evening!"
+    assert len(sent) == 1
+    assert "plannerr-custom" in sent[0]["data"]

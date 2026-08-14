@@ -6,6 +6,8 @@ import {
   isStandalone,
   pushSubscriptionToIn,
   urlBase64ToUint8Array,
+  type CustomNotificationOut,
+  type NotificationCapabilities,
   type TestNotificationOut,
 } from "../../lib/push";
 
@@ -28,12 +30,13 @@ export function usePushNotifications() {
 
   const vapidQuery = useQuery({
     queryKey: notificationsKeys.vapid,
-    queryFn: () => api.get<{ public_key: string }>("/notifications/vapid-public-key"),
+    queryFn: () => api.get<NotificationCapabilities>("/notifications/vapid-public-key"),
     enabled: supported,
     staleTime: Infinity,
   });
   const vapidKey = supported ? (vapidQuery.data?.public_key ?? "") : "";
   const vapidConfigured = Boolean(vapidKey);
+  const llmConfigured = supported ? (vapidQuery.data?.llm_configured ?? false) : false;
 
   const [permission, setPermission] = useState<NotificationPermission>(() =>
     supported ? Notification.permission : "denied",
@@ -96,19 +99,27 @@ export function usePushNotifications() {
       }),
   });
 
+  const customMutation = useMutation({
+    mutationFn: (message: string) =>
+      api.post<CustomNotificationOut>("/notifications/test-llm", { message }),
+  });
+
   return {
     supported,
     vapidConfigured,
+    llmConfigured,
     permission,
     subscription,
     enabled: permission === "granted" && subscription !== null,
     // iOS Safari only supports push for installed (standalone) PWAs — show a hint.
     iosNeedsInstall: isIOS() && !isStandalone(),
-    enable: () => enableMutation.mutateAsync(),
-    disable: () => disableMutation.mutateAsync(),
-    sendTest: () => testMutation.mutateAsync(),
+    enable: () => enableMutation.mutateAsync().catch(() => undefined),
+    disable: () => disableMutation.mutateAsync().catch(() => undefined),
+    sendTest: () => testMutation.mutateAsync().catch(() => undefined),
+    sendCustom: (message: string) => customMutation.mutateAsync(message).catch(() => undefined),
     enableState: enableMutation,
     disableState: disableMutation,
     testState: testMutation,
+    customState: customMutation,
   };
 }

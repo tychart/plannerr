@@ -166,3 +166,16 @@ class TestNotificationOut(BaseModel):
     device_count: int
     summary: str
     source: Literal["llm", "fallback"]
+
+
+class CustomNotificationIn(BaseModel):
+    """User-provided prompt for a custom LLM notification."""
+
+    message: str = Field(min_length=1, max_length=500)
+
+
+class CustomNotificationOut(BaseModel):
+    """Result of sending a custom LLM notification."""
+
+    device_count: int
+    body: str

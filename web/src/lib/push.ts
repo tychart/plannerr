@@ -16,6 +16,16 @@ export interface TestNotificationOut {
   source: "llm" | "fallback";
 }
 
+export interface CustomNotificationOut {
+  device_count: number;
+  body: string;
+}
+
+export interface NotificationCapabilities {
+  public_key: string;
+  llm_configured: boolean;
+}
+
 /** Convert a base64url-encoded string (e.g. the VAPID public key) to bytes. */
 export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
