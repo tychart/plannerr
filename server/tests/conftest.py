@@ -17,7 +17,12 @@ TEST_DATABASE_URL = os.environ.get(
 os.environ.setdefault("DATABASE_URL", TEST_DATABASE_URL)
 os.environ.setdefault("PASSWORD_PEPPER", "test-pepper")
 os.environ.setdefault("RATE_LIMIT_AUTH", "10000/minute")
+os.environ.setdefault("RATE_LIMIT_NOTIFICATIONS", "10000/minute")
 os.environ.setdefault("COOKIE_SECURE", "false")
+os.environ.setdefault("VAPID_PUBLIC_KEY", "test-vapid-public")
+os.environ.setdefault("VAPID_PRIVATE_KEY", "test-vapid-private")
+os.environ.setdefault("VAPID_SUBJECT", "mailto:test@example.com")
+os.environ.setdefault("LLM_BASE_URL", "")  # tests exercise the deterministic fallback
 
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402

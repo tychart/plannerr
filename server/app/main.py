@@ -9,7 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.ratelimit import limiter
-from app.routers import assignments, auth, classes
+from app.routers import assignments, auth, classes, notifications
 
 API_PREFIX = "/api/v1"
 
@@ -39,6 +39,9 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix=f"{API_PREFIX}/auth", tags=["auth"])
     app.include_router(classes.router, prefix=f"{API_PREFIX}/classes", tags=["classes"])
     app.include_router(assignments.router, prefix=f"{API_PREFIX}/assignments", tags=["assignments"])
+    app.include_router(
+        notifications.router, prefix=f"{API_PREFIX}/notifications", tags=["notifications"]
+    )
 
     @app.get("/health")
     async def health() -> dict[str, str]:

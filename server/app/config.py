@@ -22,6 +22,20 @@ class Settings(BaseSettings):
     cookie_name: str = "plannerr_session"
     cookie_secure: bool = False  # set True when served over HTTPS
     rate_limit_auth: str = "10/minute"
+    rate_limit_notifications: str = "6/minute"  # per-IP cap on the test-notification endpoint
+
+    # Web Push (VAPID keys, base64url-encoded). Empty keys ⇒ notifications UI disabled.
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:plannerr@localhost"
+
+    # LLM summary (OpenAI-compatible chat completions — LiteLLM proxy, Ollama, OpenAI…).
+    # Enabled when llm_base_url is set (Ollama / LiteLLM are typically keyless, so the
+    # API key is optional). Empty llm_base_url ⇒ deterministic fallback summary only.
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = "gpt-4o-mini"
+    llm_timeout_seconds: float = 15.0
 
     @property
     def cookie_max_age(self) -> int:

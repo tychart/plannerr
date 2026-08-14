@@ -11,6 +11,7 @@ import { AppShell } from "./components/AppShell";
 import { FullScreenSpinner } from "./components/ui/Spinner";
 import { HomePage } from "./features/home/HomePage";
 import { ClassConfigPage } from "./features/classes/ClassConfigPage";
+import { SettingsPage } from "./features/settings/SettingsPage";
 
 // Lazy-loaded: pulls in react-markdown + remark-gfm, kept out of the main chunk.
 const AssignmentPage = lazy(() =>
@@ -41,8 +42,22 @@ export default function App() {
         <AuthProvider>
           <BrowserRouter>
             <Routes>
-              <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
-              <Route path="/register" element={<PublicOnly><RegisterPage /></PublicOnly>} />
+              <Route
+                path="/login"
+                element={
+                  <PublicOnly>
+                    <LoginPage />
+                  </PublicOnly>
+                }
+              />
+              <Route
+                path="/register"
+                element={
+                  <PublicOnly>
+                    <RegisterPage />
+                  </PublicOnly>
+                }
+              />
               <Route
                 element={
                   <RequireAuth>
@@ -52,6 +67,7 @@ export default function App() {
               >
                 <Route path="/" element={<HomePage />} />
                 <Route path="/classes" element={<ClassConfigPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
                 <Route
                   path="/assignments/:id"
                   element={

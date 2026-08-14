@@ -6,6 +6,7 @@ Schema overview:
 - classes              — per-user classes with a hex color
 - assignments          — tasks with a class, due date, progress (step 5), priority
 - assignment_links     — optional labeled URLs per assignment
+- push_subscriptions   — Web Push endpoints (one per user/device)
 
 Every data table carries ``user_id`` so all queries can be scoped to the
 logged-in user cheaply (defense in depth on top of FK cascades).
@@ -56,6 +57,9 @@ class User(Base):
     )
     classes: Mapped[list[Class]] = relationship(back_populates="user", cascade="all, delete-orphan")
     assignments: Mapped[list[Assignment]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    push_subscriptions: Mapped[list[PushSubscription]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -182,3 +186,36 @@ class AssignmentLink(Base):
     )
 
     assignment: Mapped[Assignment] = relationship(back_populates="links")
+
+
+class PushSubscription(Base):
+    """A browser push subscription (Web Push) registered by a user's device.
+
+    ``endpoint`` is the push-service URL the server delivers to; ``p256dh`` /
+    ``auth`` are the message-encryption keys handed out by ``pushManager``.
+    """
+
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        # One row per push endpoint per user; re-subscribing replaces in place.
+        Index("uq_push_subscriptions_user_endpoint", "user_id", "endpoint", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    p256dh: Mapped[str] = mapped_column(Text, nullable=False)
+    auth: Mapped[str] = mapped_column(Text, nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="push_subscriptions")

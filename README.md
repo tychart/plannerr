@@ -2,7 +2,8 @@
 
 A clean, self-hostable assignment tracker. Organize homework by class, track
 progress with a snapping slider, keep markdown notes and links per assignment,
-and get a polished light/dark experience on desktop and mobile.
+and get a polished light/dark experience on desktop and mobile. Installable as a
+PWA with offline caching, plus optional AI-written daily push summaries.
 
 ## Features (v1)
 
@@ -16,6 +17,13 @@ and get a polished light/dark experience on desktop and mobile.
   that snaps to increments of 5. At 100% the assignment is complete.
 - **Home** — assignments grouped by day (overdue on top), infinite scroll past
   the first 7-day window, and a hide/show-completed toggle.
+- **Notifications** — an AI-written daily summary of what's due, delivered as a
+  push notification (Web Push). Settings has enable/disable plus a **Send test
+  notification** button to preview it (scheduled sends are future work).
+  Configured with VAPID keys + any OpenAI-compatible LLM endpoint.
+- **PWA / offline** — installable to your home screen (standalone, notch-safe),
+  with a service worker that caches the app shell and last-seen data; an
+  offline banner appears when disconnected.
 - **Theming** — dark mode is a first-class citizen (Tailwind v4 class-based
   variant + semantic tokens), defaults to your OS preference, no flash on load.
 
@@ -23,8 +31,8 @@ and get a polished light/dark experience on desktop and mobile.
 
 | Layer    | Tech                                                                    |
 | -------- | ----------------------------------------------------------------------- |
-| `web/`   | React 19, TypeScript (strict), Vite, Tailwind CSS v4, TanStack Query, react-router, Radix UI, react-markdown, date-fns |
-| `server/`| Python 3.14, FastAPI, SQLAlchemy 2.0 (async), Alembic, psycopg 3, pydantic-settings, argon2-cffi, slowapi, managed by `uv` |
+| `web/`   | React 19, TypeScript (strict), Vite, Tailwind CSS v4, TanStack Query, react-router, Radix UI, react-markdown, date-fns, vite-plugin-pwa (Workbox) |
+| `server/`| Python 3.14, FastAPI, SQLAlchemy 2.0 (async), Alembic, psycopg 3, pydantic-settings, argon2-cffi, slowapi, pywebpush, httpx, managed by `uv` |
 | `db/`    | PostgreSQL 18                                                           |
 | Deploy   | Single `docker compose` — three services (`web`, `server`, `db`)        |
 
@@ -49,6 +57,12 @@ podman-compose up --build
 
 The `server` container runs `alembic upgrade head` automatically on boot, so
 migrations apply before the API starts serving.
+
+```bash
+# 3. (Optional) Push notifications — generate VAPID keys and add to .env:
+#    uv run --project server python -m app.vapid_keys
+#    Then set LLM_BASE_URL to any OpenAI-compatible endpoint (see below).
+```
 
 ### Docker vs. Podman
 
@@ -93,6 +107,13 @@ npm run dev
 | `PASSWORD_PEPPER` | server  | **yes**  | Secret mixed into password hashing. Never commit. |
 | `COOKIE_SECURE`   | server  | no       | `true` over HTTPS (compose sets it); `false` for local http |
 | `RATE_LIMIT_AUTH` | server  | no       | Per-IP auth rate limit (default `10/minute`)      |
+| `RATE_LIMIT_NOTIFICATIONS` | server | no | Per-IP limit on the test-notification endpoint (default `6/minute`) |
+| `VAPID_PUBLIC_KEY` | server | no | Web Push public key (base64url). Empty ⇒ notifications disabled. Generate with `uv run --project server python -m app.vapid_keys` |
+| `VAPID_PRIVATE_KEY` | server | no | Web Push private key (base64url). Keep secret.   |
+| `VAPID_SUBJECT`  | server | no       | Contact for push services (`mailto:…` or `https:…`). Default `mailto:plannerr@localhost` |
+| `LLM_BASE_URL`   | server | no       | OpenAI-compatible chat-completions base URL (LiteLLM `http://host:4000/v1`, Ollama `http://host:11434/v1`, OpenAI `https://api.openai.com/v1`…). Empty ⇒ deterministic fallback summary |
+| `LLM_API_KEY`    | server | no       | Optional bearer token for the LLM endpoint (Ollama / keyless LiteLLM: leave empty) |
+| `LLM_MODEL`      | server | no       | Model name served by the endpoint (default `gpt-4o-mini`) |
 | `WEB_PORT`        | compose | no       | Host port for the web app (default `8080`)        |
 
 ## Testing
@@ -121,6 +142,40 @@ cd web && npm run test
         └── features/      # auth, theme, home, assignments, classes
 ```
 
+## Push notifications (PWA)
+
+Plannerr is an installable PWA. The **Settings → Daily notifications** section
+enables push on the current device and has a **Send test notification** button
+that generates today's summary and pushes it to every device you've enrolled.
+The notification body is written by an LLM (1–3 short sentences); if the LLM is
+unconfigured or unreachable, a built-in deterministic summary is used instead.
+
+Setup is two optional env blocks (see the table above):
+
+```bash
+# VAPID keys — one-time generation:
+uv run --project server python -m app.vapid_keys
+# → paste VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY into .env, set VAPID_SUBJECT
+
+# LLM endpoint — any OpenAI-compatible chat-completions server:
+LLM_BASE_URL=http://localhost:11434/v1   # Ollama
+# LLM_BASE_URL=http://localhost:4000/v1  # LiteLLM proxy
+LLM_API_KEY=                             # optional (Ollama/keyless LiteLLM)
+LLM_MODEL=llama3.1                       # any model the endpoint serves
+```
+
+Things to know:
+
+- **HTTPS is required** for service workers and push on real devices (localhost
+  is exempt). Put your reverse proxy in front of the web container and set
+  `COOKIE_SECURE=true`.
+- **iOS (Safari ≥ 16.4)** only delivers push to *installed* PWAs — the user must
+  tap Share → “Add to Home Screen” first. Settings shows a hint when needed.
+- **Offline**: the app shell is precached and `GET /api/*` responses are cached
+  (network-first, 7-day expiry). When disconnected you still see your last-seen
+  data plus an offline banner; edits require a connection.
+- Clicking a notification opens the app (focusing an open tab if there is one).
+
 ## Deployment notes
 
 - Everything behind one host port: `web` (nginx) serves the built SPA and
@@ -132,7 +187,8 @@ cd web && npm run test
 
 ## Roadmap (v2 ideas)
 
-Settings page (toggle quick-add conveniences), realtime markdown preview,
-search/filter/calendar, reminders, sharing/collaborative lists, account
-management. The architecture (feature folders, shared form, modular routers)
-is designed to make these additive.
+Scheduled daily sends (a cron/APScheduler job calling the existing summary
+service once per day, cached per day to avoid repeat LLM spend), realtime
+markdown preview, search/filter/calendar, sharing/collaborative lists, account
+management. The architecture (feature folders, shared form, modular routers) is
+designed to make these additive.

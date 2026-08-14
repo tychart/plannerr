@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
@@ -135,3 +136,33 @@ class AssignmentListOut(BaseModel):
 
     items: list[AssignmentOut]
     next_cursor: str | None
+
+
+# ── Notifications ───────────────────────────────────────────────────────────
+
+class PushSubscriptionKeys(BaseModel):
+    """Message-encryption keys from the browser's pushManager."""
+
+    p256dh: str = Field(min_length=1)
+    auth: str = Field(min_length=1)
+
+
+class PushSubscriptionIn(BaseModel):
+    """A Web Push subscription as handed back by pushManager.subscribe()."""
+
+    endpoint: str = Field(min_length=1, max_length=2000)
+    keys: PushSubscriptionKeys
+
+
+class TestNotificationIn(BaseModel):
+    """Trigger for a daily-summary test notification."""
+
+    timezone: str = Field(default="UTC", min_length=1, max_length=64)
+
+
+class TestNotificationOut(BaseModel):
+    """Result of sending the daily summary."""
+
+    device_count: int
+    summary: str
+    source: Literal["llm", "fallback"]

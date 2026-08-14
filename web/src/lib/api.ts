@@ -18,15 +18,21 @@ interface RequestOptions extends Omit<RequestInit, "body"> {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, ...init } = options;
-  const res = await fetch(`${BASE}${path}`, {
-    credentials: "include",
-    ...init,
-    headers: {
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...init.headers,
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      credentials: "include",
+      ...init,
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    // Network-level failure: offline or the server is unreachable.
+    throw new ApiError(0, "Can't reach the server — check your connection and try again.");
+  }
 
   if (res.status === 204) {
     return undefined as T;
