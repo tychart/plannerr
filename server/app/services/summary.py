@@ -20,6 +20,13 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
+from httpx import (
+    ConnectError,
+    ConnectTimeout,
+    HTTPError,
+    HTTPStatusError,
+    TimeoutException,
+)
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -49,7 +56,8 @@ CUSTOM_SYSTEM_PROMPT = (
     "Keep it under 200 characters."
 )
 
-MAX_TOKENS = 160
+MAX_TOKENS = 1024  # thinking models spend tokens on internal reasoning first
+MAX_TOKENS_RETRY = 4096
 TEMPERATURE = 0.7
 
 
@@ -133,7 +141,21 @@ def _fallback_summary(items: list[dict]) -> str:
 
 
 async def _chat_completion(messages: list[dict[str, str]]) -> str:
-    """POST ``messages`` to the configured OpenAI-compatible endpoint; return text."""
+    """POST ``messages`` to the configured OpenAI-compatible endpoint; return text.
+
+    Retries once with a larger token budget if the model returns empty content
+    (thinking models can exhaust a small budget on reasoning before answering).
+    """
+    text = await _chat_completion_once(messages, max_tokens=MAX_TOKENS)
+    if not text.strip():
+        logger.warning("LLM returned empty content; retrying with a larger budget")
+        text = await _chat_completion_once(messages, max_tokens=MAX_TOKENS_RETRY)
+    return text
+
+
+async def _chat_completion_once(
+    messages: list[dict[str, str]], max_tokens: int
+) -> str:
     settings = get_settings()
     url = settings.llm_base_url.rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
@@ -142,7 +164,7 @@ async def _chat_completion(messages: list[dict[str, str]]) -> str:
     payload = {
         "model": settings.llm_model,
         "messages": messages,
-        "max_tokens": MAX_TOKENS,
+        "max_tokens": max_tokens,
         "temperature": TEMPERATURE,
     }
     async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
@@ -167,19 +189,19 @@ async def _llm_summary(items: list[dict], today_str: str) -> str:
 
 def _llm_error_detail(exc: Exception) -> str:
     """Short, human-readable cause for an LLM call failure (for error messages)."""
-    if isinstance(exc, httpx.HTTPStatusError):
+    if isinstance(exc, HTTPStatusError):
         body = exc.response.text.strip()[:160]
         return f"HTTP {exc.response.status_code}" + (f" — {body}" if body else "")
-    if isinstance(exc, httpx.ConnectError):
+    if isinstance(exc, ConnectError):
         return (
             "connection refused — is the LLM host reachable from the server container? "
             "On Podman/Docker try host.containers.internal or the host's LAN IP"
         )
-    if isinstance(exc, httpx.ConnectTimeout):
+    if isinstance(exc, ConnectTimeout):
         return "connection timed out"
-    if isinstance(exc, httpx.TimeoutException):
+    if isinstance(exc, TimeoutException):
         return "timed out"
-    if isinstance(exc, httpx.HTTPError):
+    if isinstance(exc, HTTPError):
         return str(exc)[:200]
     return f"{type(exc).__name__}: {exc}"[:200]
 

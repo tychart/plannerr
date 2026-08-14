@@ -162,7 +162,10 @@ uv run --project server python -m app.vapid_keys
 # → paste VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY into .env, set VAPID_SUBJECT
 
 # LLM endpoint — any OpenAI-compatible chat-completions server:
-LLM_BASE_URL=http://localhost:11434/v1   # Ollama
+LLM_BASE_URL=http://localhost:11434/v1   # Ollama (local dev, outside containers)
+# In the compose stack the server runs in a container: "localhost" there is the
+# container itself. Use the host alias instead:
+#   LLM_BASE_URL=http://host.containers.internal:11434/v1   # Podman/Docker host
 # LLM_BASE_URL=http://localhost:4000/v1  # LiteLLM proxy
 LLM_API_KEY=                             # optional (Ollama/keyless LiteLLM)
 LLM_MODEL=llama3.1                       # any model the endpoint serves
@@ -173,6 +176,13 @@ Things to know:
 - **HTTPS is required** for service workers and push on real devices (localhost
   is exempt). Put your reverse proxy in front of the web container and set
   `COOKIE_SECURE=true`.
+- **LLM reachability**: the server runs in a container, so `localhost` in
+  `LLM_BASE_URL` points at the container itself. Point it at the host with
+  `http://host.containers.internal:11434/v1` (Podman/Docker host alias), the
+  host's LAN IP, or run the LLM as a compose service.
+- **Thinking models**: models like `*-thinking` spend tokens on reasoning before
+  answering. The server retries once with a larger token budget when the first
+  response is empty, but very slow models make the button take several seconds.
 - **iOS (Safari ≥ 16.4)** only delivers push to *installed* PWAs — the user must
   tap Share → “Add to Home Screen” first. Settings shows a hint when needed.
 - **Offline**: the app shell is precached and `GET /api/*` responses are cached

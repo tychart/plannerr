@@ -260,3 +260,72 @@ async def test_test_llm_sends_custom_notification(
     assert body["body"] == "Reminder set — enjoy your evening!"
     assert len(sent) == 1
     assert "plannerr-custom" in sent[0]["data"]
+
+
+async def test_test_llm_reports_connect_error(client: AsyncClient, monkeypatch) -> None:
+    """A failed LLM call returns 502 with a diagnostic detail (URL + cause)."""
+    await register(client)
+    await client.post("/api/v1/notifications/subscribe", json=_subscribe_payload())
+
+    from app.routers import notifications as notifications_router
+    from app.services import summary
+
+    class FakeSettings:
+        llm_base_url = "http://localhost:4000/v1"
+        llm_api_key = ""
+        llm_model = "some-model"
+        llm_timeout_seconds = 5.0
+        vapid_private_key = "test-vapid-private"
+        vapid_subject = "mailto:test@example.com"
+
+    monkeypatch.setattr(summary, "get_settings", lambda: FakeSettings())
+    monkeypatch.setattr(notifications_router, "settings", FakeSettings())
+
+    async def _boom(*args, **kwargs):
+        raise httpx.ConnectError("refused", request=httpx.Request("POST", "http://x"))
+
+    fake_client = AsyncMock()
+    fake_client.__aenter__.return_value = fake_client
+    fake_client.post = _boom
+    monkeypatch.setattr(
+        summary, "httpx", SimpleNamespace(AsyncClient=lambda **kw: fake_client)
+    )
+
+    r = await client.post("/api/v1/notifications/test-llm", json={"message": "hi"})
+    assert r.status_code == 502
+    assert "Couldn't reach the LLM at http://localhost:4000/v1/chat/completions" in r.json()["detail"]
+    assert "connection refused" in r.json()["detail"]
+
+
+async def test_chat_completion_retries_on_empty_content(monkeypatch) -> None:
+    """A thinking model that exhausts its budget gets one retry with more tokens."""
+    empty = httpx.Response(
+        200,
+        json={"choices": [{"message": {"content": ""}}]},
+        request=httpx.Request("POST", "http://x"),
+    )
+    ok = httpx.Response(
+        200,
+        json={"choices": [{"message": {"content": "hello"}}]},
+        request=httpx.Request("POST", "http://x"),
+    )
+    fake_client = AsyncMock()
+    fake_client.__aenter__.return_value = fake_client
+    fake_client.post.side_effect = [empty, ok]
+
+    class FakeSettings:
+        llm_base_url = "http://localhost:4000/v1"
+        llm_api_key = ""
+        llm_model = "some-model"
+        llm_timeout_seconds = 5.0
+
+    monkeypatch.setattr(summary, "get_settings", lambda: FakeSettings())
+    monkeypatch.setattr(
+        summary, "httpx", SimpleNamespace(AsyncClient=lambda **kw: fake_client)
+    )
+
+    text = await summary._chat_completion([{"role": "user", "content": "hi"}])
+    assert text == "hello"
+    assert fake_client.post.await_count == 2
+    budgets = [c.kwargs["json"]["max_tokens"] for c in fake_client.post.await_args_list]
+    assert budgets == [summary.MAX_TOKENS, summary.MAX_TOKENS_RETRY]
