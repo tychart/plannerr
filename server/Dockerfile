@@ -1,16 +1,15 @@
 # syntax=docker/dockerfile:1
 # Plannerr API server — uv-native, production image.
 #
-# Base off the official python:3.14-slim image and copy the standalone uv
-# binary from ghcr.io/astral-sh/uv. The astral-sh/uv image has no python3.14
-# tag yet, and this pattern works identically under Docker and Podman.
-FROM python:3.14-slim
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# Official astral uv image with Python 3.14 pre-installed (Debian trixie-slim).
+# The floating tag rolls uv forward on rebuild; pin to a version tag like
+# 0.12.4-python3.14-trixie-slim for fully reproducible builds.
+# Works identically under Docker and Podman.
+FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    PYTHONUNBUFFERED=1 \
-    UV_PYTHON=/usr/local/bin/python
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
