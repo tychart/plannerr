@@ -65,13 +65,20 @@ class LLMUnavailableError(RuntimeError):
     """Raised when the LLM cannot be used (not configured or unreachable)."""
 
 
-def _today_bounds(tz_name: str) -> tuple[datetime, datetime, datetime]:
-    """Return (local_now, start_of_today_utc, end_of_today_utc) for ``tz_name``."""
+def today_bounds(
+    tz_name: str, now: datetime | None = None
+) -> tuple[datetime, datetime, datetime]:
+    """Return (local_now, start_of_today_utc, end_of_today_utc) for ``tz_name``.
+
+    ``now`` is injectable for tests; defaults to the current UTC time.
+    """
+    if now is None or now.tzinfo is None:
+        now = datetime.now(timezone.utc)
     try:
         tz = ZoneInfo(tz_name)
     except ZoneInfoNotFoundError:
         tz = timezone.utc
-    local_now = datetime.now(tz)
+    local_now = now.astimezone(tz)
     start_local = datetime.combine(local_now.date(), dt_time.min, tzinfo=tz)
     end_local = datetime.combine(local_now.date(), dt_time.max, tzinfo=tz)
     return local_now, start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
@@ -304,7 +311,7 @@ async def send_daily_summary(
     user: User, db: AsyncSession, tz_name: str
 ) -> TestNotificationOut:
     """Build today's summary for ``user`` and push it to all their devices."""
-    local_now, start_utc, end_utc = _today_bounds(tz_name)
+    local_now, start_utc, end_utc = today_bounds(tz_name)
     tz = local_now.tzinfo
 
     result = await db.execute(

@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Bell, BellOff, CheckCircle2, Info, Send, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, BellOff, CheckCircle2, Clock, Info, Save, Send, Sparkles } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Spinner } from "../../components/ui/Spinner";
+import { Switch } from "../../components/ui/Switch";
 import { usePushNotifications } from "../notifications/usePushNotifications";
 
 function errorMessage(err: unknown): string {
@@ -13,9 +14,36 @@ function errorMessage(err: unknown): string {
 export function SettingsPage() {
   const push = usePushNotifications();
   const [customMessage, setCustomMessage] = useState("");
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState("08:00");
+  const [scheduleSaved, setScheduleSaved] = useState(false);
   const llmReason =
     "AI notifications are off — set LLM_BASE_URL (and LLM_API_KEY if needed) " +
     "in the server's .env, then restart the server.";
+
+  // Sync the form from the saved schedule once it loads (or after saving).
+  useEffect(() => {
+    if (push.schedule) {
+      setScheduleEnabled(push.schedule.enabled);
+      if (push.schedule.time) setScheduleTime(push.schedule.time);
+    }
+  }, [push.schedule]);
+
+  // Show a transient "Saved" confirmation.
+  useEffect(() => {
+    if (push.saveScheduleState.isSuccess) {
+      setScheduleSaved(true);
+      const timer = setTimeout(() => setScheduleSaved(false), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [push.saveScheduleState.isSuccess]);
+
+  const scheduleTz = push.schedule?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  function handleSaveSchedule() {
+    if (!scheduleTime) return;
+    void push.saveSchedule({ enabled: scheduleEnabled, time: scheduleTime, timezone: scheduleTz });
+  }
 
   return (
     <div className="space-y-6">
@@ -28,7 +56,8 @@ export function SettingsPage() {
         </h2>
         <p className="mt-1 text-sm text-muted">
           Plannerr can send you a daily summary of what's due, written by an AI model from your
-          assignments. Sending isn't scheduled yet — the button below previews the notification.
+          assignments — automatically on a schedule, or right now with a button. Sends only fire on
+          days when something is due (or overdue).
         </p>
 
         <div className="mt-4 space-y-3">
@@ -85,7 +114,7 @@ export function SettingsPage() {
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
-                    Send test notification
+                    Send today's summary
                   </Button>
                 </>
               ) : (
@@ -122,6 +151,63 @@ export function SettingsPage() {
               </p>
               <p className="mt-1 text-muted">{push.testState.data.summary}</p>
             </div>
+          )}
+        </div>
+
+        {/* Daily schedule */}
+        <div className="mt-5 border-t border-border pt-4">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Clock className="h-4 w-4 text-primary" />
+            Daily schedule
+          </h3>
+          <p className="mt-1 text-sm text-muted">
+            Automatically send the summary each day at your chosen time — only on days when
+            something is due or overdue.
+          </p>
+
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <Switch
+                checked={scheduleEnabled}
+                onCheckedChange={setScheduleEnabled}
+                aria-label="Send daily summary on a schedule"
+              />
+              Enabled
+            </label>
+            <div className="flex items-center gap-2">
+              <label htmlFor="schedule-time" className="text-sm text-muted">
+                At
+              </label>
+              <input
+                id="schedule-time"
+                type="time"
+                value={scheduleTime}
+                onChange={(event) => setScheduleTime(event.target.value)}
+                className="h-10 rounded-lg border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+            <Button
+              size="md"
+              onClick={handleSaveSchedule}
+              disabled={push.saveScheduleState.isPending}
+            >
+              {push.saveScheduleState.isPending ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save
+            </Button>
+          </div>
+
+          <p className="mt-2 text-xs text-muted">
+            {scheduleEnabled
+              ? `Will send at ${scheduleTime} in ${scheduleTz} when something is due.`
+              : `Daily sends are off. Timezone: ${scheduleTz}.`}
+          </p>
+          {scheduleSaved && <p className="mt-1 text-xs text-success">Schedule saved.</p>}
+          {push.saveScheduleState.isError && (
+            <p className="mt-1 text-sm text-danger">{errorMessage(push.saveScheduleState.error)}</p>
           )}
         </div>
       </section>

@@ -26,6 +26,12 @@ export interface NotificationCapabilities {
   llm_configured: boolean;
 }
 
+export interface NotificationSchedule {
+  enabled: boolean;
+  time: string; // 24-hour "HH:MM" in the user's timezone
+  timezone: string;
+}
+
 /** Convert a base64url-encoded string (e.g. the VAPID public key) to bytes. */
 export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);

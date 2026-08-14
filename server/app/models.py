@@ -7,6 +7,7 @@ Schema overview:
 - assignments          — tasks with a class, due date, progress (step 5), priority
 - assignment_links     — optional labeled URLs per assignment
 - push_subscriptions   — Web Push endpoints (one per user/device)
+- notification_schedules — per-user daily notification settings (1:1 with users)
 
 Every data table carries ``user_id`` so all queries can be scoped to the
 logged-in user cheaply (defense in depth on top of FK cascades).
@@ -15,17 +16,19 @@ logged-in user cheaply (defense in depth on top of FK cascades).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     SmallInteger,
     String,
     Text,
+    Time,
     Uuid,
     column,
     func,
@@ -61,6 +64,9 @@ class User(Base):
     )
     push_subscriptions: Mapped[list[PushSubscription]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    notification_schedule: Mapped[NotificationSchedule | None] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
     )
 
 
@@ -219,3 +225,35 @@ class PushSubscription(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="push_subscriptions")
+
+
+class NotificationSchedule(Base):
+    """Per-user daily notification settings (one row per user).
+
+    ``send_time`` is a local wall-clock time interpreted in the user's
+    ``timezone``; ``last_sent_date`` records the user-local day the summary was
+    last evaluated (sent or skipped for having nothing due) so the scheduler
+    only acts once per day.
+    """
+
+    __tablename__ = "notification_schedules"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    send_time: Mapped[time] = mapped_column(Time, nullable=False)
+    timezone: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'UTC'")
+    )
+    last_sent_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="notification_schedule")

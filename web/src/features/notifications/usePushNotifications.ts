@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import {
   isIOS,
@@ -8,11 +8,13 @@ import {
   urlBase64ToUint8Array,
   type CustomNotificationOut,
   type NotificationCapabilities,
+  type NotificationSchedule,
   type TestNotificationOut,
 } from "../../lib/push";
 
 const notificationsKeys = {
   vapid: ["notifications", "vapid"] as const,
+  schedule: ["notifications", "schedule"] as const,
 };
 
 /** True when the browser can do Web Push (secure context + SW + push). */
@@ -22,8 +24,8 @@ function isPushSupported(): boolean {
 
 /**
  * Everything the Settings page needs to manage push notifications:
- * capability checks, VAPID key fetch, subscribe/unsubscribe, and the
- * "send test notification" action.
+ * capability checks, VAPID key fetch, subscribe/unsubscribe, the daily
+ * schedule, and the test actions.
  */
 export function usePushNotifications() {
   const supported = isPushSupported();
@@ -104,6 +106,18 @@ export function usePushNotifications() {
       api.post<CustomNotificationOut>("/notifications/test-llm", { message }),
   });
 
+  const queryClient = useQueryClient();
+  const scheduleQuery = useQuery({
+    queryKey: notificationsKeys.schedule,
+    queryFn: () => api.get<NotificationSchedule>("/notifications/schedule"),
+  });
+
+  const saveScheduleMutation = useMutation({
+    mutationFn: (schedule: NotificationSchedule) =>
+      api.put<NotificationSchedule>("/notifications/schedule", schedule),
+    onSuccess: (data) => queryClient.setQueryData(notificationsKeys.schedule, data),
+  });
+
   return {
     supported,
     vapidConfigured,
@@ -117,6 +131,11 @@ export function usePushNotifications() {
     disable: () => disableMutation.mutateAsync().catch(() => undefined),
     sendTest: () => testMutation.mutateAsync().catch(() => undefined),
     sendCustom: (message: string) => customMutation.mutateAsync(message).catch(() => undefined),
+    schedule: scheduleQuery.data,
+    scheduleLoading: scheduleQuery.isLoading,
+    saveSchedule: (schedule: NotificationSchedule) =>
+      saveScheduleMutation.mutateAsync(schedule).catch(() => undefined),
+    saveScheduleState: saveScheduleMutation,
     enableState: enableMutation,
     disableState: disableMutation,
     testState: testMutation,

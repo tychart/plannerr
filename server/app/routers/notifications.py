@@ -19,10 +19,13 @@ from app.ratelimit import limiter
 from app.schemas import (
     CustomNotificationIn,
     CustomNotificationOut,
+    NotificationScheduleIn,
+    NotificationScheduleOut,
     PushSubscriptionIn,
     TestNotificationIn,
     TestNotificationOut,
 )
+from app.services.schedule import get_schedule, save_schedule
 from app.services.summary import (
     LLMUnavailableError,
     send_custom_notification,
@@ -105,6 +108,25 @@ async def send_test(
             detail="No devices are set up for notifications yet — enable them in Settings first.",
         )
     return await send_daily_summary(user, db, payload.timezone)
+
+
+@router.get("/schedule", response_model=NotificationScheduleOut)
+async def get_notification_schedule(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> NotificationScheduleOut:
+    """Return the user's daily-notification schedule (defaults if unset)."""
+    return await get_schedule(user.id, db)
+
+
+@router.put("/schedule", response_model=NotificationScheduleOut)
+async def put_notification_schedule(
+    payload: NotificationScheduleIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> NotificationScheduleOut:
+    """Save the user's daily-notification schedule."""
+    return await save_schedule(user, db, payload)
 
 
 @router.post("/test-llm", response_model=CustomNotificationOut)

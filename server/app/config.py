@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout_seconds: float = 15.0
 
+    # Scheduled daily notifications.
+    notification_check_seconds: int = 30  # how often the scheduler scans for due sends
+    default_notification_time: str = "08:00"  # HH:MM used until the user picks their own
+
     @property
     def cookie_max_age(self) -> int:
         """Session cookie lifetime in seconds."""

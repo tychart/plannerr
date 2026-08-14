@@ -18,9 +18,10 @@ PWA with offline caching, plus optional AI-written daily push summaries.
 - **Home** — assignments grouped by day (overdue on top), infinite scroll past
   the first 7-day window, and a hide/show-completed toggle.
 - **Notifications** — an AI-written daily summary of what's due, delivered as a
-  push notification (Web Push). Settings has enable/disable plus a **Send test
-  notification** button to preview it (scheduled sends are future work).
-  Configured with VAPID keys + any OpenAI-compatible LLM endpoint.
+  push notification (Web Push). Settings can **schedule a daily send time**
+  (only fires on days something is due), send one now with **Send today's
+  summary**, or send a **custom AI notification**. Configured with VAPID keys +
+  any OpenAI-compatible LLM endpoint.
 - **PWA / offline** — installable to your home screen (standalone, notch-safe),
   with a service worker that caches the app shell and last-seen data; an
   offline banner appears when disconnected.
@@ -108,6 +109,7 @@ npm run dev
 | `COOKIE_SECURE`   | server  | no       | `true` over HTTPS (compose sets it); `false` for local http |
 | `RATE_LIMIT_AUTH` | server  | no       | Per-IP auth rate limit (default `10/minute`)      |
 | `RATE_LIMIT_NOTIFICATIONS` | server | no | Per-IP limit on the test-notification endpoint (default `6/minute`) |
+| `NOTIFICATION_CHECK_SECONDS` | server | no | How often the daily-send scheduler scans for due sends (default `30`) |
 | `VAPID_PUBLIC_KEY` | server | no | Web Push public key (base64url). Empty ⇒ notifications disabled. Generate with `uv run --project server python -m app.vapid_keys` |
 | `VAPID_PRIVATE_KEY` | server | no | Web Push private key (base64url). Keep secret.   |
 | `VAPID_SUBJECT`  | server | no       | Contact for push services (`mailto:…` or `https:…`). Default `mailto:plannerr@localhost` |
@@ -153,6 +155,12 @@ unconfigured or unreachable, a built-in deterministic summary is used instead.
 **Settings → Custom AI notification** is a second test button: type anything and
 the LLM rewrites it into a friendly push notification. It requires the LLM to be
 configured — otherwise the button is greyed out with the reason shown.
+
+**Settings → Daily schedule** sends the summary automatically every day at a
+**time you choose** (in your timezone), but **only on days when something is
+due or overdue** — quiet days get nothing. It runs in-process via APScheduler
+(30-second tick); each user stores their own time + IANA timezone, and the
+once-per-day guard prevents duplicates.
 
 Setup is two optional env blocks (see the table above):
 
@@ -201,8 +209,6 @@ Things to know:
 
 ## Roadmap (v2 ideas)
 
-Scheduled daily sends (a cron/APScheduler job calling the existing summary
-service once per day, cached per day to avoid repeat LLM spend), realtime
-markdown preview, search/filter/calendar, sharing/collaborative lists, account
-management. The architecture (feature folders, shared form, modular routers) is
-designed to make these additive.
+Realtime markdown preview, search/filter/calendar, sharing/collaborative lists,
+account management. The architecture (feature folders, shared form, modular
+routers) is designed to make these additive.

@@ -3,8 +3,9 @@
 import uuid
 from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
 
 class UserOut(BaseModel):
@@ -179,3 +180,33 @@ class CustomNotificationOut(BaseModel):
 
     device_count: int
     body: str
+
+
+# ── Daily schedule ───────────────────────────────────────────────────────────
+
+HH_MM_RE = r"^([01]\d|2[0-3]):[0-5]\d$"  # 24-hour "HH:MM"
+
+
+class NotificationScheduleIn(BaseModel):
+    """Per-user daily notification schedule."""
+
+    enabled: bool
+    time: str = Field(pattern=HH_MM_RE, description='24-hour "HH:MM" in the user\'s timezone')
+    timezone: str = Field(min_length=1, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError:
+            raise ValueError(f"Unknown timezone: {value!r}") from None
+        return value
+
+
+class NotificationScheduleOut(BaseModel):
+    """Saved schedule as returned to the client."""
+
+    enabled: bool
+    time: str
+    timezone: str
