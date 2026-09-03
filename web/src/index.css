@@ -40,6 +40,49 @@
   --ring: oklch(0.68 0.17 277 / 0.45);
 }
 
+/* Motion primitives for the mobile nav sheet. Radix Dialog toggles
+   `data-state` on the overlay/content, so open/close animations stay purely
+   declarative here and opt out under prefers-reduced-motion. */
+@theme {
+  --animate-overlay-in: overlay-in 0.2s ease-out;
+  --animate-overlay-out: overlay-out 0.15s ease-in forwards;
+  --animate-sheet-in: sheet-in 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-sheet-out: sheet-out 0.2s ease-in forwards;
+
+  @keyframes overlay-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes overlay-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes sheet-in {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes sheet-out {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+}
+
 /* Map tokens into Tailwind's color system via `@theme inline` so utilities
    like bg-background / text-foreground flip automatically with `.dark`. */
 @theme inline {
