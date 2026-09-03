@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.deps import get_current_user
 from app.models import Class, Item, User
+from app.naming import normalize_name
 from app.schemas import (
     ClassDeletePreview,
     ClassIn,
@@ -30,11 +31,6 @@ _PREVIEW_LIMIT = 500
 
 # Order of the keys in serialized counts (also the UI display order).
 KIND_ORDER = ("assignment", "quiz", "exam")
-
-
-def _normalize_name(name: str) -> str:
-    """Trim and collapse internal whitespace."""
-    return " ".join(name.strip().split())
 
 
 def _empty_counts() -> dict[str, int]:
@@ -119,7 +115,7 @@ async def create_class(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ClassOut:
-    name = _normalize_name(payload.name)
+    name = normalize_name(payload.name)
     if not name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Name cannot be empty")
     await _ensure_name_available(db, user, name)
@@ -141,7 +137,7 @@ async def update_class(
     cls = await _get_owned_class(db, user, class_id)
 
     if payload.name is not None:
-        name = _normalize_name(payload.name)
+        name = normalize_name(payload.name)
         if not name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Name cannot be empty")
         await _ensure_name_available(db, user, name, exclude_id=cls.id)

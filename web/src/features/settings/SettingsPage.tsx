@@ -5,6 +5,7 @@ import { Input } from "../../components/ui/Input";
 import { Spinner } from "../../components/ui/Spinner";
 import { Switch } from "../../components/ui/Switch";
 import { usePushNotifications } from "../notifications/usePushNotifications";
+import { BackupSection } from "./BackupSection";
 
 function errorMessage(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
@@ -279,6 +280,8 @@ export function SettingsPage() {
           </div>
         )}
       </section>
+
+      <BackupSection />
     </div>
   );
 }

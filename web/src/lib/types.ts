@@ -108,3 +108,49 @@ export interface ItemListQuery {
   tz?: string;
   limit?: number;
 }
+
+// ── Backup / data transfer ──────────────────────────────────────────────────
+
+export interface BackupClass {
+  name: string;
+  color: string;
+}
+
+export interface BackupLink {
+  url: string;
+  label: string | null;
+}
+
+/** One item inside a backup file (export shape; hand-written files may omit
+ *  optional fields and use YYYY-MM-DD dates). */
+export interface BackupItem {
+  kind: ItemKind;
+  title: string;
+  notes?: string;
+  due_at: string;
+  progress?: number | null;
+  is_priority?: boolean;
+  /** Class NAME, not id — matched/created on import. */
+  class: string;
+  links?: BackupLink[];
+}
+
+export interface BackupFile {
+  format: "plannerr-backup";
+  version: 1;
+  exported_at: string;
+  classes: BackupClass[];
+  items: BackupItem[];
+}
+
+export interface ImportRowError {
+  row: number; // 0-based index into the file's items
+  reason: string;
+}
+
+export interface ImportReport {
+  imported: number;
+  duplicates: number;
+  classes_created: string[];
+  invalid: ImportRowError[];
+}

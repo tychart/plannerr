@@ -31,6 +31,11 @@ plus optional AI-written daily push summaries.
   (only fires on days something is due), send one now with **Send today's
   summary**, or send a **custom AI notification**. Configured with VAPID keys +
   any OpenAI-compatible LLM endpoint.
+- **Backups** — Settings → **Backup & restore** downloads everything (classes,
+  assignments, quizzes, exams) as a versioned JSON file and imports one back.
+  Imports are additive and duplicate-safe (same kind + class + name + date are
+  skipped), match or create classes by name, accept hand-written files with
+  `YYYY-MM-DD` dates, and report skipped rows per line.
 - **PWA / offline** — installable to your home screen (standalone, notch-safe),
   with a service worker that caches the app shell and last-seen data; an
   offline banner appears when disconnected.
@@ -206,6 +211,41 @@ Things to know:
   (network-first, 7-day expiry). When disconnected you still see your last-seen
   data plus an offline banner; edits require a connection.
 - Clicking a notification opens the app (focusing an open tab if there is one).
+
+## Backups (export / import JSON)
+
+Settings → **Backup & restore**. The exported file is a complete, deterministic
+snapshot:
+
+```json
+{
+  "format": "plannerr-backup",
+  "version": 1,
+  "exported_at": "2026-09-02T12:00:00.000Z",
+  "classes": [{ "name": "Math", "color": "#ff0000" }],
+  "items": [
+    {
+      "kind": "assignment",
+      "title": "Problem set 3",
+      "notes": "",
+      "due_at": "2026-09-15T23:59:59.000Z",
+      "progress": 35,
+      "is_priority": true,
+      "class": "Math",
+      "links": [{ "url": "https://canvas.example.com/ps3", "label": "Canvas" }]
+    }
+  ]
+}
+```
+
+Importing is an **additive merge** — nothing existing is deleted or overwritten.
+Classes are matched by name (case-insensitive) and created with their stored
+color when missing; rows whose `kind + class + title + due date` already exist
+are skipped (so re-importing a file never duplicates). Hand-written files are
+welcome: only `kind`, `title`, `class`, and `due_at` are required; dates accept
+`YYYY-MM-DD` (all-day) or ISO date-times; `notes`, `links`, `is_priority`, and
+assignment `progress` are optional. Every skipped row is reported with its line
+number and reason while the rest import.
 
 ## Deployment notes
 

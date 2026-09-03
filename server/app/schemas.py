@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
@@ -246,3 +246,36 @@ class NotificationScheduleOut(BaseModel):
     enabled: bool
     time: str
     timezone: str
+
+
+# ── Backup / data transfer ───────────────────────────────────────────────────
+
+class ImportBackupIn(BaseModel):
+    """Top-level backup file envelope, deliberately loose: row-level parsing and
+    friendly per-row validation live in the import service so that hand-written
+    files are accepted and malformed rows are skipped (never a whole-file 422).
+    """
+
+    format: str | None = None
+    version: int | None = None
+    exported_at: str | None = None
+    # Rows are kept deliberately untyped so row-level problems are reported by
+    # the import service (skip + explain) instead of a whole-file 422.
+    classes: list[Any] | None = None
+    items: list[Any] | None = None
+
+
+class ImportRowError(BaseModel):
+    """One skipped row and why (row index is 0-based into the file's items)."""
+
+    row: int
+    reason: str
+
+
+class ImportReportOut(BaseModel):
+    """Result of importing a backup file."""
+
+    imported: int
+    duplicates: int
+    classes_created: list[str]
+    invalid: list[ImportRowError]
