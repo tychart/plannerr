@@ -10,6 +10,9 @@ import { ClassDeleteDialog } from "./ClassDeleteDialog";
 import { ClassForm } from "./ClassForm";
 import { useClasses, useCreateClass, useUpdateClass } from "./useClasses";
 
+/** Class manager, hosted in Settings → Classes. Everything from the old
+ *  top-level page is here: create/edit/delete with colors, per-kind counts,
+ *  and the delete-preview + transfer dialog. */
 export function ClassConfigPage() {
   const { data: classes, isLoading, isError } = useClasses();
   const createClass = useCreateClass();
@@ -49,9 +52,15 @@ export function ClassConfigPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Classes</h1>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">Classes</h2>
+          <p className="mt-1 max-w-md text-sm text-muted">
+            Each class carries a color so you can spot its items at a glance. Deleting a class
+            previews what it holds and can move everything to another class first.
+          </p>
+        </div>
         <Button
           size="sm"
           onClick={() => {

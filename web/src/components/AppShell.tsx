@@ -4,7 +4,6 @@ import {
   FileQuestion,
   GraduationCap,
   House,
-  Layers,
   ListChecks,
   LogOut,
   Moon,
@@ -19,7 +18,6 @@ import { useTheme } from "../features/theme/useTheme";
 
 const NAV_ITEMS = [
   { to: "/", label: "Home", icon: House, end: true },
-  { to: "/classes", label: "Classes", icon: Layers, end: false },
   { to: "/assignments", label: "Assignments", icon: ListChecks, end: false },
   { to: "/quizzes", label: "Quizzes", icon: FileQuestion, end: false },
   { to: "/exams", label: "Exams", icon: GraduationCap, end: false },

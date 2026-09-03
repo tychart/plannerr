@@ -10,7 +10,6 @@ import { RegisterPage } from "./features/auth/RegisterPage";
 import { AppShell } from "./components/AppShell";
 import { FullScreenSpinner } from "./components/ui/Spinner";
 import { HomePage } from "./features/home/HomePage";
-import { ClassConfigPage } from "./features/classes/ClassConfigPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { ItemLibraryPage } from "./features/items/ItemLibraryPage";
 
@@ -69,7 +68,6 @@ export default function App() {
                 }
               >
                 <Route path="/" element={<HomePage />} />
-                <Route path="/classes" element={<ClassConfigPage />} />
                 <Route path="/assignments" element={<ItemLibraryPage kind="assignment" />} />
                 <Route path="/quizzes" element={<ItemLibraryPage kind="quiz" />} />
                 <Route path="/exams" element={<ItemLibraryPage kind="exam" />} />
