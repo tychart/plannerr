@@ -41,7 +41,10 @@ export function LoginPage() {
           <p className="text-sm text-muted">Sign in to see your assignments.</p>
         </div>
 
-        <form onSubmit={(e) => void onSubmit(e)} className="space-y-4 rounded-2xl border border-border bg-surface p-6">
+        <form
+          onSubmit={(e) => void onSubmit(e)}
+          className="space-y-4 rounded-2xl border border-border bg-surface p-6"
+        >
           <Field label="Username" htmlFor="username">
             <Input
               id="username"

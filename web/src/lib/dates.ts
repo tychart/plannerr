@@ -15,16 +15,18 @@ export function dayKey(d: Date): string {
 /**
  * Date-only items are stored at 23:59:59 in the user's local zone
  * (converted to UTC by the client at write time). Detecting that sentinel
- * lets us render "All day" instead of a fake time.
+ * lets us render a time label instead of a fake clock time.
  */
 export function isDateOnly(value: string | Date): boolean {
   const d = toDate(value);
   return d.getHours() === 23 && d.getMinutes() === 59 && d.getSeconds() === 59;
 }
 
+/** Time-less (date-only) items read as "End of day": a deadline due by the
+ *  end of its date, whatever the kind. */
 export function formatDueTime(value: string | Date): string {
   const d = toDate(value);
-  return isDateOnly(d) ? "All day" : format(d, "h:mm a");
+  return isDateOnly(d) ? "End of day" : format(d, "h:mm a");
 }
 
 export function formatDayLabel(d: Date): string {

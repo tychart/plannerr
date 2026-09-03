@@ -28,10 +28,14 @@ export function Modal({ open, onOpenChange, title, description, children, classN
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               {title && (
-                <Dialog.Title className="text-lg font-semibold text-foreground">{title}</Dialog.Title>
+                <Dialog.Title className="text-lg font-semibold text-foreground">
+                  {title}
+                </Dialog.Title>
               )}
               {description && (
-                <Dialog.Description className="mt-1 text-sm text-muted">{description}</Dialog.Description>
+                <Dialog.Description className="mt-1 text-sm text-muted">
+                  {description}
+                </Dialog.Description>
               )}
             </div>
             <Dialog.Close asChild>

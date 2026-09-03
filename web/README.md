@@ -11,13 +11,13 @@ npm run dev        # http://localhost:5173, proxies /api → http://localhost:80
 
 ## Scripts
 
-| Command            | What it does                    |
-| ------------------ | ------------------------------- |
-| `npm run dev`      | Vite dev server (hot reload)    |
-| `npm run build`    | `tsc -b` + production build     |
-| `npm run lint`     | oxlint                          |
-| `npm run test`     | Vitest unit tests (lib helpers) |
-| `npm run format`   | Prettier (write)                |
+| Command          | What it does                    |
+| ---------------- | ------------------------------- |
+| `npm run dev`    | Vite dev server (hot reload)    |
+| `npm run build`  | `tsc -b` + production build     |
+| `npm run lint`   | oxlint                          |
+| `npm run test`   | Vitest unit tests (lib helpers) |
+| `npm run format` | Prettier (write)                |
 
 ## Structure
 

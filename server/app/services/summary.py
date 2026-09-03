@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
+from app.constants import DATE_ONLY_TIME
 from app.models import Item, PushSubscription, User
 from app.schemas import CustomNotificationOut, TestNotificationOut
 
@@ -86,12 +87,22 @@ def today_bounds(
     return local_now, start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
+def _is_date_only(due_local: datetime) -> bool:
+    """True when ``due_local`` is a date-only (time-less) item.
+
+    Matches the app-wide sentinel: such items are stored at 23:59:59 in the
+    user's zone (the same check the web client's ``isDateOnly`` performs) and
+    are rendered as "end of day" rather than a fake clock time.
+    """
+    return due_local.time().replace(microsecond=0) == DATE_ONLY_TIME
+
+
 def _due_label(due_local: datetime, local_now: datetime, is_overdue: bool) -> str:
     """Friendly due-time label in the user's local time."""
     if is_overdue:
         return "overdue"
-    if due_local.hour == 0 and due_local.minute == 0:
-        return "all day"
+    if _is_date_only(due_local):
+        return "end of day"
     delta = due_local - local_now
     if delta <= timedelta(minutes=15):
         return "due any minute"

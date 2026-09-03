@@ -11,7 +11,10 @@ interface ClassBadgeProps {
 export function ClassBadge({ name, color, className }: ClassBadgeProps) {
   return (
     <span
-      className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", className)}
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        className,
+      )}
       style={{ backgroundColor: color, color: contrastTextColor(color) }}
     >
       {name}

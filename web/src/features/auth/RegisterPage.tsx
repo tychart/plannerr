@@ -40,10 +40,15 @@ export function RegisterPage() {
         <div className="mb-8 flex flex-col items-center gap-3">
           <BookOpen className="h-10 w-10 text-primary" />
           <h1 className="text-2xl font-semibold text-foreground">Create your account</h1>
-          <p className="text-sm text-muted">Username (3–32 chars) and a password of 8+ characters.</p>
+          <p className="text-sm text-muted">
+            Username (3–32 chars) and a password of 8+ characters.
+          </p>
         </div>
 
-        <form onSubmit={(e) => void onSubmit(e)} className="space-y-4 rounded-2xl border border-border bg-surface p-6">
+        <form
+          onSubmit={(e) => void onSubmit(e)}
+          className="space-y-4 rounded-2xl border border-border bg-surface p-6"
+        >
           <Field label="Username" htmlFor="username">
             <Input
               id="username"

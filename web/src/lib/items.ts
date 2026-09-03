@@ -119,11 +119,12 @@ export function kindRoute(kind: ItemKind): string {
   return "exams";
 }
 
-/** Compact, humanized due label: "Today, 9:00 AM" / "Fri, Oct 3" / "All day". */
+/** Compact, humanized due label: "Today, 9:00 AM" / "Fri, Oct 3". Date-only
+ *  items keep just the day (they span the whole day). */
 export function itemDueLabel(item: Pick<Item, "due_at">): string {
   const day = formatDayLabel(toDate(item.due_at));
-  const time = formatDueTime(item.due_at);
-  return time === "All day" ? day : `${day}, ${time}`;
+  if (isDateOnly(item.due_at)) return day;
+  return `${day}, ${formatDueTime(item.due_at)}`;
 }
 
 export function itemTotal(counts: ItemCounts): number {

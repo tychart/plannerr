@@ -21,7 +21,7 @@ into an account that already holds its rows is a no-op duplicate-skip.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, time as dt_time, timezone
+from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -30,7 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.constants import DEFAULT_CLASS_COLOR
+from app.constants import DATE_ONLY_TIME, DEFAULT_CLASS_COLOR
 from app.models import Class, Item, ItemLink, User
 from app.naming import normalize_name
 from app.schemas import ImportReportOut, ImportRowError
@@ -126,9 +126,9 @@ def _normalize_progress(value: Any) -> int | None:
 def _parse_due(value: Any, tz: ZoneInfo | timezone) -> tuple[datetime | None, str | None]:
     """Parse a due date into an aware UTC datetime.
 
-    Accepts ``YYYY-MM-DD`` (interpreted as an all-day item in ``tz``) and any
-    ISO 8601 date-time (naive datetimes are interpreted in ``tz``; aware ones
-    are used as-is and normalized to UTC).
+    Accepts ``YYYY-MM-DD`` (interpreted as a date-only item — due end of
+    day — in ``tz``) and any ISO 8601 date-time (naive datetimes are
+    interpreted in ``tz``; aware ones are used as-is and normalized to UTC).
     """
     if value is None or not isinstance(value, str):
         return None, "due date must be a string (YYYY-MM-DD or an ISO date-time)"
@@ -142,9 +142,9 @@ def _parse_due(value: Any, tz: ZoneInfo | timezone) -> tuple[datetime | None, st
 
     if parsed.tzinfo is None:
         if parsed.hour == 0 and parsed.minute == 0 and parsed.second == 0:
-            # A bare date: all-day, stored at 23:59:59 in the user's zone
-            # (the app's convention for date-only items).
-            local = datetime.combine(parsed.date(), dt_time(23, 59, 59), tzinfo=tz)
+            # A bare date: date-only, stored at DATE_ONLY_TIME in the user's
+            # zone (the app's convention for time-less items).
+            local = datetime.combine(parsed.date(), DATE_ONLY_TIME, tzinfo=tz)
             return local.astimezone(timezone.utc), None
         # Naive date-time: interpret as the user's local time.
         return parsed.replace(tzinfo=tz).astimezone(timezone.utc), None

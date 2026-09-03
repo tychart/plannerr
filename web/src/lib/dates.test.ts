@@ -21,9 +21,9 @@ function item(kind: ItemKind, id: string, dueAt: string): Item {
 }
 
 describe("isDateOnly / formatDueTime", () => {
-  it("treats 23:59:59 as all-day", () => {
+  it("labels any date-only item end of day", () => {
     expect(isDateOnly("2026-08-14T23:59:59")).toBe(true);
-    expect(formatDueTime("2026-08-14T23:59:59")).toBe("All day");
+    expect(formatDueTime("2026-08-14T23:59:59")).toBe("End of day");
   });
 
   it("renders real times as clock time", () => {
