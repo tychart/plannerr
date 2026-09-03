@@ -9,9 +9,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.services.schedule import check_and_send_due, has_assignments_due
+from app.services.schedule import check_and_send_due, has_items_due
 from tests.conftest import TEST_DATABASE_URL
-from tests.helpers import create_assignment, create_class, register
+from tests.helpers import create_assignment, create_class, create_quiz, register
 
 ENDPOINT = "https://push.example.com/sched-device"
 
@@ -210,7 +210,7 @@ async def test_check_and_send_skips_when_no_devices(client: AsyncClient, monkeyp
     assert state["last_sent_date"].isoformat() == "2026-08-14"
 
 
-async def test_has_assignments_due_respects_timezone(client: AsyncClient) -> None:
+async def test_has_items_due_respects_timezone(client: AsyncClient) -> None:
     """03:00Z on Aug 15 is after Aug 14 in UTC, but 21:00 MDT on Aug 14 in Denver."""
     user = await register(client, "tz_user")
     cls = await create_class(client)
@@ -226,9 +226,59 @@ async def test_has_assignments_due_respects_timezone(client: AsyncClient) -> Non
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as db:
-        due_utc = await has_assignments_due(user["id"], db, "UTC", now=NOW)
-        due_denver = await has_assignments_due(user["id"], db, "America/Denver", now=NOW)
+        due_utc = await has_items_due(user["id"], db, "UTC", now=NOW)
+        due_denver = await has_items_due(user["id"], db, "America/Denver", now=NOW)
     await engine.dispose()
 
     assert due_utc is False  # 03:00Z Aug 15 is after the end of Aug 14 in UTC
     assert due_denver is True  # 03:00Z Aug 15 = 21:00 MDT Aug 14 → still today in Denver
+
+
+async def test_has_items_due_counts_todays_quiz(client: AsyncClient) -> None:
+    """A quiz due later today is actionable even though it has no progress."""
+    user = await register(client, "quiz_user")
+    cls = await create_class(client)
+    await create_quiz(
+        client,
+        cls["id"],
+        title="Pop quiz",
+        due_at=datetime(2026, 8, 14, 21, 0, tzinfo=timezone.utc),
+    )
+
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as db:
+        due = await has_items_due(user["id"], db, "UTC", now=NOW)
+    await engine.dispose()
+    assert due is True
+
+
+async def test_has_items_due_ignores_past_quiz_and_completed(client: AsyncClient) -> None:
+    """Past quizzes/exams drop out (no completion to chase) and completed
+    assignments never count."""
+    user = await register(client, "quiet_user")
+    cls = await create_class(client)
+    await create_quiz(
+        client,
+        cls["id"],
+        title="Old quiz",
+        due_at=datetime(2026, 8, 13, 10, 0, tzinfo=timezone.utc),
+    )
+    done = await create_assignment(
+        client,
+        cls["id"],
+        title="Done hw",
+        due_at=datetime(2026, 8, 14, 9, 0, tzinfo=timezone.utc),
+    )
+    await client.patch(f"/api/v1/items/{done['id']}", json={"progress": 100})
+
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as db:
+        due = await has_items_due(user["id"], db, "UTC", now=NOW)
+    await engine.dispose()
+    assert due is False

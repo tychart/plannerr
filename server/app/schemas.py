@@ -5,7 +5,20 @@ from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
+
+
+# What an Item can be. Assignments carry progress; quizzes and exams are dated
+# class events with no completion semantics.
+ItemKind = Literal["assignment", "quiz", "exam"]
+
 
 
 class UserOut(BaseModel):
@@ -37,13 +50,21 @@ class LoginIn(BaseModel):
 HEX_COLOR_RE = r"^#[0-9a-fA-F]{6}$"
 
 
+class ItemCounts(BaseModel):
+    """How many items of each kind a class holds."""
+
+    assignment: int = 0
+    quiz: int = 0
+    exam: int = 0
+
+
 class ClassOut(BaseModel):
-    """Public class representation, including its assignment count."""
+    """Public class representation, including per-kind item counts."""
 
     id: uuid.UUID
     name: str
     color: str
-    assignment_count: int
+    counts: ItemCounts
     created_at: datetime
     updated_at: datetime
 
@@ -58,84 +79,99 @@ class ClassUpdate(BaseModel):
     color: str | None = Field(default=None, pattern=HEX_COLOR_RE)
 
 
-class AssignmentBriefOut(BaseModel):
-    """Compact assignment used in class delete-preview lists."""
+class ItemBriefOut(BaseModel):
+    """Compact item (any kind) used in class delete-preview lists."""
 
     id: uuid.UUID
+    kind: ItemKind
     title: str
     due_at: datetime
-    progress: int
+    progress: int | None
 
 
 class ClassDeletePreview(BaseModel):
-    assignment_count: int
-    assignments: list[AssignmentBriefOut]
+    counts: ItemCounts
+    total: int
+    items: list[ItemBriefOut]
 
 
-# ── Assignments ─────────────────────────────────────────────────────────────
+# ── Items (assignments, quizzes, exams) ─────────────────────────────────────
 
 class ClassBriefOut(BaseModel):
-    """Compact class nested inside assignment responses."""
+    """Compact class nested inside item responses."""
 
     id: uuid.UUID
     name: str
     color: str
 
 
-class AssignmentLinkIn(BaseModel):
+class ItemLinkIn(BaseModel):
     url: AnyHttpUrl
     label: str | None = Field(default=None, max_length=100)
 
 
-class AssignmentLinkOut(BaseModel):
+class ItemLinkOut(BaseModel):
     id: uuid.UUID
     url: str
     label: str | None
     position: int
 
 
-class AssignmentIn(BaseModel):
+class ItemIn(BaseModel):
+    kind: ItemKind
     title: str = Field(min_length=1, max_length=200)
     class_id: uuid.UUID
     notes: str = Field(default="", max_length=100_000)
     due_at: datetime
-    progress: int = Field(default=0, ge=0, le=100, multiple_of=5)
+    progress: int | None = Field(default=None, ge=0, le=100, multiple_of=5)
     is_priority: bool = False
-    links: list[AssignmentLinkIn] = Field(default_factory=list, max_length=5)
+    links: list[ItemLinkIn] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def _kind_progress_rules(self) -> "ItemIn":
+        if self.kind == "assignment":
+            # Assignments always carry progress; omitted means 0 (just created).
+            self.progress = 0 if self.progress is None else self.progress
+        elif self.progress is not None:
+            raise ValueError("progress is only valid for assignments")
+        return self
 
 
-class AssignmentUpdate(BaseModel):
+class ItemUpdate(BaseModel):
+    """Partial item update. ``kind`` is immutable — set it at creation."""
+
     title: str | None = Field(default=None, min_length=1, max_length=200)
     class_id: uuid.UUID | None = None
     notes: str | None = Field(default=None, max_length=100_000)
     due_at: datetime | None = None
     progress: int | None = Field(default=None, ge=0, le=100, multiple_of=5)
     is_priority: bool | None = None
-    links: list[AssignmentLinkIn] | None = Field(default=None, max_length=5)
+    links: list[ItemLinkIn] | None = Field(default=None, max_length=5)
 
 
-class AssignmentOut(BaseModel):
-    """Full assignment representation with nested class and links."""
+class ItemOut(BaseModel):
+    """Full item representation with nested class and links."""
 
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     id: uuid.UUID
+    kind: ItemKind
     title: str
     notes: str
     due_at: datetime
-    progress: int
+    progress: int | None
     is_priority: bool
-    is_complete: bool  # derived from progress == 100
+    is_complete: bool  # derived: only assignments (progress == 100) are complete
     created_at: datetime
     updated_at: datetime
     class_: ClassBriefOut = Field(alias="class")
-    links: list[AssignmentLinkOut]
+    links: list[ItemLinkOut]
 
 
-class AssignmentListOut(BaseModel):
-    """Cursor-paginated assignment list."""
+class ItemListOut(BaseModel):
+    """Cursor-paginated item list."""
 
-    items: list[AssignmentOut]
+    items: list[ItemOut]
     next_cursor: str | None
 
 

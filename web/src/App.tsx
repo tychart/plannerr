@@ -12,11 +12,14 @@ import { FullScreenSpinner } from "./components/ui/Spinner";
 import { HomePage } from "./features/home/HomePage";
 import { ClassConfigPage } from "./features/classes/ClassConfigPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { ItemLibraryPage } from "./features/items/ItemLibraryPage";
 
 // Lazy-loaded: pulls in react-markdown + remark-gfm, kept out of the main chunk.
-const AssignmentPage = lazy(() =>
-  import("./features/assignments/AssignmentPage").then((m) => ({ default: m.AssignmentPage })),
+const ItemPage = lazy(() =>
+  import("./features/items/ItemPage").then((m) => ({ default: m.ItemPage })),
 );
+
+const DETAIL_ROUTES = ["assignments", "quizzes", "exams"] as const;
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useAuth();
@@ -67,15 +70,21 @@ export default function App() {
               >
                 <Route path="/" element={<HomePage />} />
                 <Route path="/classes" element={<ClassConfigPage />} />
+                <Route path="/assignments" element={<ItemLibraryPage kind="assignment" />} />
+                <Route path="/quizzes" element={<ItemLibraryPage kind="quiz" />} />
+                <Route path="/exams" element={<ItemLibraryPage kind="exam" />} />
                 <Route path="/settings" element={<SettingsPage />} />
-                <Route
-                  path="/assignments/:id"
-                  element={
-                    <Suspense fallback={<FullScreenSpinner />}>
-                      <AssignmentPage />
-                    </Suspense>
-                  }
-                />
+                {DETAIL_ROUTES.map((path) => (
+                  <Route
+                    key={path}
+                    path={`/${path}/:id`}
+                    element={
+                      <Suspense fallback={<FullScreenSpinner />}>
+                        <ItemPage />
+                      </Suspense>
+                    }
+                  />
+                ))}
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

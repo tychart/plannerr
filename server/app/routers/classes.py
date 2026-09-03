@@ -1,8 +1,9 @@
 """Class management routes: CRUD, delete-preview, and transfer-on-delete.
 
 All queries are scoped to the logged-in user. Deleting a class always
-cascades to its assignments; the UI calls ``delete-preview`` first so the
-user can confirm and optionally transfer assignments to another class.
+cascades to its items (assignments, quizzes, exams); the UI calls
+``delete-preview`` first so the user can confirm and optionally transfer the
+class's items to another class.
 """
 
 import uuid
@@ -13,18 +14,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.deps import get_current_user
-from app.models import Assignment, Class, User
+from app.models import Class, Item, User
 from app.schemas import (
-    AssignmentBriefOut,
     ClassDeletePreview,
     ClassIn,
     ClassOut,
     ClassUpdate,
+    ItemBriefOut,
+    ItemCounts,
 )
 
 router = APIRouter()
 
 _PREVIEW_LIMIT = 500
+
+# Order of the keys in serialized counts (also the UI display order).
+KIND_ORDER = ("assignment", "quiz", "exam")
 
 
 def _normalize_name(name: str) -> str:
@@ -32,12 +37,16 @@ def _normalize_name(name: str) -> str:
     return " ".join(name.strip().split())
 
 
-def _to_out(cls: Class, assignment_count: int) -> ClassOut:
+def _empty_counts() -> dict[str, int]:
+    return {kind: 0 for kind in KIND_ORDER}
+
+
+def _to_out(cls: Class, counts: dict[str, int]) -> ClassOut:
     return ClassOut(
         id=cls.id,
         name=cls.name,
         color=cls.color,
-        assignment_count=assignment_count,
+        counts=ItemCounts(**counts),
         created_at=cls.created_at,
         updated_at=cls.updated_at,
     )
@@ -65,12 +74,26 @@ async def _ensure_name_available(
         )
 
 
-async def _assignment_count(db: AsyncSession, user: User, class_id: uuid.UUID) -> int:
-    return await db.scalar(
-        select(func.count(Assignment.id)).where(
-            Assignment.user_id == user.id, Assignment.class_id == class_id
-        )
-    ) or 0
+async def _counts_by_class(
+    db: AsyncSession, user: User, class_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, dict[str, int]]:
+    """Per-class per-kind item counts for ``class_ids`` (all owned by user)."""
+    result: dict[uuid.UUID, dict[str, int]] = {}
+    if not class_ids:
+        return result
+    rows = await db.execute(
+        select(Item.class_id, Item.kind, func.count(Item.id))
+        .where(Item.user_id == user.id, Item.class_id.in_(class_ids))
+        .group_by(Item.class_id, Item.kind)
+    )
+    for class_id, kind, count in rows.all():
+        result.setdefault(class_id, _empty_counts())[kind] = count
+    return result
+
+
+async def _counts_for_class(db: AsyncSession, user: User, class_id: uuid.UUID) -> dict[str, int]:
+    counts = await _counts_by_class(db, user, [class_id])
+    return counts.get(class_id, _empty_counts())
 
 
 @router.get("", response_model=list[ClassOut])
@@ -86,19 +109,8 @@ async def list_classes(
         )
     ).all()
 
-    counts: dict[uuid.UUID, int] = {}
-    if classes:
-        rows = await db.execute(
-            select(Assignment.class_id, func.count(Assignment.id))
-            .where(
-                Assignment.user_id == user.id,
-                Assignment.class_id.in_([c.id for c in classes]),
-            )
-            .group_by(Assignment.class_id)
-        )
-        counts = {class_id: count for class_id, count in rows.all()}
-
-    return [_to_out(c, counts.get(c.id, 0)) for c in classes]
+    counts = await _counts_by_class(db, user, [c.id for c in classes])
+    return [_to_out(c, counts.get(c.id, _empty_counts())) for c in classes]
 
 
 @router.post("", response_model=ClassOut, status_code=status.HTTP_201_CREATED)
@@ -116,7 +128,7 @@ async def create_class(
     db.add(cls)
     await db.commit()
     await db.refresh(cls)
-    return _to_out(cls, 0)
+    return _to_out(cls, _empty_counts())
 
 
 @router.patch("/{class_id}", response_model=ClassOut)
@@ -139,7 +151,7 @@ async def update_class(
 
     await db.commit()
     await db.refresh(cls)
-    return _to_out(cls, await _assignment_count(db, user, cls.id))
+    return _to_out(cls, await _counts_for_class(db, user, cls.id))
 
 
 @router.get("/{class_id}/delete-preview", response_model=ClassDeletePreview)
@@ -148,24 +160,31 @@ async def delete_preview(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ClassDeletePreview:
-    """Return the assignments that would be lost, for the confirm dialog."""
+    """Return the items that would be lost, for the confirm dialog."""
     await _get_owned_class(db, user, class_id)  # 404 when not owned
 
-    total = await _assignment_count(db, user, class_id)
-    assignments = (
+    counts = await _counts_for_class(db, user, class_id)
+    items = (
         await db.scalars(
-            select(Assignment)
-            .where(Assignment.user_id == user.id, Assignment.class_id == class_id)
-            .order_by(Assignment.due_at, Assignment.id)
+            select(Item)
+            .where(Item.user_id == user.id, Item.class_id == class_id)
+            .order_by(Item.due_at, Item.id)
             .limit(_PREVIEW_LIMIT)
         )
     ).all()
 
     return ClassDeletePreview(
-        assignment_count=total,
-        assignments=[
-            AssignmentBriefOut(id=a.id, title=a.title, due_at=a.due_at, progress=a.progress)
-            for a in assignments
+        counts=ItemCounts(**counts),
+        total=sum(counts.values()),
+        items=[
+            ItemBriefOut(
+                id=i.id,
+                kind=i.kind,
+                title=i.title,
+                due_at=i.due_at,
+                progress=i.progress,
+            )
+            for i in items
         ],
     )
 
@@ -177,14 +196,14 @@ async def delete_class(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Response:
-    """Delete a class. Optionally transfer its assignments to another class first."""
+    """Delete a class. Optionally transfer its items to another class first."""
     await _get_owned_class(db, user, class_id)
 
     if transfer_to_class_id is not None:
         if transfer_to_class_id == class_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot transfer assignments to the class being deleted",
+                detail="Cannot transfer items to the class being deleted",
             )
         target = await db.scalar(
             select(Class.id).where(Class.id == transfer_to_class_id, Class.user_id == user.id)
@@ -194,13 +213,13 @@ async def delete_class(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Target class not found"
             )
         await db.execute(
-            update(Assignment)
-            .where(Assignment.user_id == user.id, Assignment.class_id == class_id)
+            update(Item)
+            .where(Item.user_id == user.id, Item.class_id == class_id)
             .values(class_id=transfer_to_class_id)
         )
 
     cls = await db.get(Class, class_id)
     if cls is not None:
-        await db.delete(cls)  # remaining assignments cascade via FK
+        await db.delete(cls)  # remaining items cascade via FK
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

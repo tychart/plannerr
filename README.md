@@ -1,22 +1,31 @@
 # Plannerr
 
-A clean, self-hostable assignment tracker. Organize homework by class, track
-progress with a snapping slider, keep markdown notes and links per assignment,
-and get a polished light/dark experience on desktop and mobile. Installable as a
-PWA with offline caching, plus optional AI-written daily push summaries.
+A clean, self-hostable planner for schoolwork. Track assignments with a
+snapping progress slider and keep quizzes and exams alongside them — each with
+markdown notes and links — organized by class, in a polished light/dark
+experience on desktop and mobile. Installable as a PWA with offline caching,
+plus optional AI-written daily push summaries.
 
 ## Features (v1)
 
 - **Accounts** — open self-registration, username + password (argon2id with a
   secret pepper), server-side sessions in HttpOnly cookies (30 days).
 - **Classes** — per-user classes with a color (10 presets + a color wheel);
-  deleting a class previews its assignments and can transfer them to another
-  class first.
-- **Assignments** — title, class, due date/time (time optional → "All day"),
-  markdown notes, optional labeled links, priority flag, and a progress slider
-  that snaps to increments of 5. At 100% the assignment is complete.
-- **Home** — assignments grouped by day (overdue on top), infinite scroll past
-  the first 7-day window, and a hide/show-completed toggle.
+  deleting a class previews its items and can transfer them (assignments,
+  quizzes, and exams alike) to another class first.
+- **Assignments, Quizzes & Exams** — one shared model of trackable *items*
+  (a `kind` column). Assignments add a title, due date/time, markdown notes,
+  optional labeled links, priority flag, and a progress slider that snaps to
+  increments of 5 (at 100% the assignment is complete). Quizzes and exams are
+  dated events with a name, date/time, notes, links, and priority — no
+  progress, no completion.
+- **Home dashboard** — the week's active assignments (overdue + next 7 days)
+  take the bulk of the space; a sidebar lists **Upcoming quizzes** and
+  **Upcoming exams** in separate sections, today-onward, capped at 10 each.
+- **Per-type pages** — top-bar pages for Assignments, Quizzes, and Exams hold
+  *all* items of that type with server-side search (title/notes), class
+  filter, and due-date/completion filters; every item kind also has a
+  focus-mode detail page (`/assignments/:id`, `/quizzes/:id`, `/exams/:id`).
 - **Notifications** — an AI-written daily summary of what's due, delivered as a
   push notification (Web Push). Settings can **schedule a daily send time**
   (only fires on days something is due), send one now with **Send today's
@@ -135,13 +144,13 @@ cd web && npm run test
 ├── docker-compose.yml     # web + server + db (Postgres 18)
 ├── .env.example
 ├── server/                # FastAPI + SQLAlchemy async (uv project)
-│   ├── app/               # config, db, models, security, routers
+│   ├── app/               # config, db, models (items/classes/users), routers
 │   ├── alembic/           # async migrations
-│   └── tests/             # pytest (auth, classes, assignments)
+│   └── tests/             # pytest (auth, classes, items, notifications)
 └── web/                   # React + TS + Vite + Tailwind v4
     └── src/
-        ├── lib/           # api client, types, dates, color, progress
-        └── features/      # auth, theme, home, assignments, classes
+        ├── lib/           # api client, types, items, dates, color, progress
+        └── features/      # auth, theme, home, items, classes, settings
 ```
 
 ## Push notifications (PWA)

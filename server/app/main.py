@@ -12,7 +12,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import get_settings
 from app.ratelimit import limiter
-from app.routers import assignments, auth, classes, notifications
+from app.routers import auth, classes, items, notifications
 
 API_PREFIX = "/api/v1"
 
@@ -64,7 +64,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router, prefix=f"{API_PREFIX}/auth", tags=["auth"])
     app.include_router(classes.router, prefix=f"{API_PREFIX}/classes", tags=["classes"])
-    app.include_router(assignments.router, prefix=f"{API_PREFIX}/assignments", tags=["assignments"])
+    app.include_router(items.router, prefix=f"{API_PREFIX}/items", tags=["items"])
     app.include_router(
         notifications.router, prefix=f"{API_PREFIX}/notifications", tags=["notifications"]
     )

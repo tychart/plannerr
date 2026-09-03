@@ -160,7 +160,7 @@ async def test_generate_summary_uses_llm_when_configured(monkeypatch) -> None:
             "model": "some-model",
             "messages": [
                 {"role": "system", "content": summary.SYSTEM_PROMPT},
-                {"role": "user", "content": '{"today": "Tuesday, January 2", "assignments": []}'},
+                {"role": "user", "content": '{"today": "Tuesday, January 2", "items": []}'},
             ],
             "max_tokens": summary.MAX_TOKENS,
             "temperature": summary.TEMPERATURE,

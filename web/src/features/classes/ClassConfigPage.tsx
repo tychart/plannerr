@@ -4,6 +4,7 @@ import { ClassBadge } from "../../components/ClassBadge";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { Spinner } from "../../components/ui/Spinner";
+import { formatItemCounts } from "../../lib/items";
 import type { ClassItem } from "../../lib/types";
 import { ClassDeleteDialog } from "./ClassDeleteDialog";
 import { ClassForm } from "./ClassForm";
@@ -48,7 +49,7 @@ export function ClassConfigPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-foreground">Classes</h1>
         <Button
@@ -86,12 +87,10 @@ export function ClassConfigPage() {
           {(classes ?? []).map((cls) => (
             <li
               key={cls.id}
-              className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3"
+              className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface p-3"
             >
               <ClassBadge name={cls.name} color={cls.color} />
-              <span className="text-sm text-muted">
-                {cls.assignment_count} assignment{cls.assignment_count === 1 ? "" : "s"}
-              </span>
+              <span className="text-sm text-muted">{formatItemCounts(cls.counts)}</span>
               <div className="ml-auto flex gap-1">
                 <Button
                   variant="ghost"
@@ -118,7 +117,11 @@ export function ClassConfigPage() {
         </ul>
       )}
 
-      <Modal open={editing !== null} onOpenChange={(o) => !o && setEditing(null)} title="Edit class">
+      <Modal
+        open={editing !== null}
+        onOpenChange={(o) => !o && setEditing(null)}
+        title="Edit class"
+      >
         {editing && (
           <ClassForm
             key={editing.id}

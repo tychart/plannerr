@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import type { ClassDeletePreview, ClassItem } from "../../lib/types";
+import { itemsKeys } from "../items/useItems";
 
 export const classesKeys = {
   all: ["classes"] as const,
@@ -27,7 +28,11 @@ export function useUpdateClass() {
   return useMutation({
     mutationFn: ({ id, ...payload }: { id: string; name?: string; color?: string }) =>
       api.patch<ClassItem>(`/classes/${id}`, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: classesKeys.all }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: classesKeys.all });
+      // Item cards embed the class name/color — refresh cached lists too.
+      queryClient.invalidateQueries({ queryKey: itemsKeys.all });
+    },
   });
 }
 
@@ -35,8 +40,13 @@ export function useDeleteClass() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, transferToClassId }: { id: string; transferToClassId?: string }) =>
-      api.delete(`/classes/${id}${transferToClassId ? `?transfer_to_class_id=${transferToClassId}` : ""}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: classesKeys.all }),
+      api.delete(
+        `/classes/${id}${transferToClassId ? `?transfer_to_class_id=${transferToClassId}` : ""}`,
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: classesKeys.all });
+      queryClient.invalidateQueries({ queryKey: itemsKeys.all });
+    },
   });
 }
 

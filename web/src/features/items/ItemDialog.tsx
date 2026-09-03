@@ -1,34 +1,38 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Modal } from "../../components/ui/Modal";
-import type { AssignmentFormValues } from "../../lib/assignment";
-import type { SubmitAction } from "./AssignmentForm";
-import { AssignmentForm } from "./AssignmentForm";
-import { valuesToInput } from "../../lib/assignment";
-import type { Assignment } from "../../lib/types";
-import { useCreateAssignment, useUpdateAssignment } from "./useAssignments";
+import type { ItemFormValues } from "../../lib/items";
+import { KIND_LABELS, kindRoute, valuesToInput } from "../../lib/items";
+import type { Item, ItemKind } from "../../lib/types";
+import type { SubmitAction } from "./ItemForm";
+import { ItemForm } from "./ItemForm";
+import { useCreateItem, useUpdateItem } from "./useItems";
 
-interface AssignmentDialogProps {
+interface ItemDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** When set, the dialog edits this assignment instead of creating. */
-  initial?: Assignment | null;
-  /** Quick-add defaults (used by Home's "+ New" after choosing a class). */
+  /** When set, the dialog edits this item instead of creating. */
+  initial?: Item | null;
+  /** Kind preset for quick-add (used by Home/library "+ New"). */
+  kind?: ItemKind;
+  /** Quick-add defaults (used after choosing a class/date). */
   defaults?: { classId?: string; dueDate?: string };
 }
 
-/** Modal for quick-add (Home) and quick-edit (card click). */
-export function AssignmentDialog({ open, onOpenChange, initial, defaults }: AssignmentDialogProps) {
+/** Modal for quick-add and quick-edit, shared by Home and the library pages. */
+export function ItemDialog({ open, onOpenChange, initial, kind, defaults }: ItemDialogProps) {
   const navigate = useNavigate();
-  const createAssignment = useCreateAssignment();
-  const updateAssignment = useUpdateAssignment();
+  const createItem = useCreateItem();
+  const updateItem = useUpdateItem();
+
+  const activeKind: ItemKind = initial?.kind ?? kind ?? "assignment";
 
   const [formKey, setFormKey] = useState(0);
   const [quickDefaults, setQuickDefaults] = useState<{ classId?: string; dueDate?: string }>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fresh form each time the dialog opens or targets a new assignment.
+  // Fresh form each time the dialog opens or targets a new item.
   useEffect(() => {
     if (open) {
       setBusy(false);
@@ -36,22 +40,22 @@ export function AssignmentDialog({ open, onOpenChange, initial, defaults }: Assi
       setQuickDefaults({});
       setFormKey((k) => k + 1);
     }
-  }, [open, initial?.id]);
+  }, [open, initial?.id, activeKind]);
 
-  async function handleSubmit(values: AssignmentFormValues, action: SubmitAction) {
+  async function handleSubmit(values: ItemFormValues, action: SubmitAction) {
     setBusy(true);
     setError(null);
     try {
       if (initial) {
-        await updateAssignment.mutateAsync({ id: initial.id, ...valuesToInput(values) });
+        await updateItem.mutateAsync({ id: initial.id, ...valuesToInput(values) });
         onOpenChange(false);
         return;
       }
 
-      const created = await createAssignment.mutateAsync(valuesToInput(values));
+      const created = await createItem.mutateAsync(valuesToInput(values));
       if (action === "open") {
         onOpenChange(false);
-        navigate(`/assignments/${created.id}`);
+        navigate(`/${kindRoute(created.kind)}/${created.id}`);
       } else if (action === "another-class") {
         setQuickDefaults({ classId: values.class_id });
         setFormKey((k) => k + 1);
@@ -62,21 +66,21 @@ export function AssignmentDialog({ open, onOpenChange, initial, defaults }: Assi
         onOpenChange(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save assignment");
+      setError(err instanceof Error ? err.message : "Failed to save item");
     } finally {
       setBusy(false);
     }
   }
 
+  const title = initial
+    ? `Edit ${KIND_LABELS[activeKind].toLowerCase()}`
+    : `New ${KIND_LABELS[activeKind].toLowerCase()}`;
+
   return (
-    <Modal
-      open={open}
-      onOpenChange={onOpenChange}
-      title={initial ? "Edit assignment" : "New assignment"}
-      className="max-w-lg"
-    >
-      <AssignmentForm
-        key={`${formKey}-${initial?.id ?? "new"}`}
+    <Modal open={open} onOpenChange={onOpenChange} title={title} className="max-w-lg">
+      <ItemForm
+        key={`${formKey}-${initial?.id ?? activeKind}`}
+        kind={activeKind}
         mode={initial ? "edit" : "create"}
         initial={initial}
         defaultClassId={defaults?.classId ?? quickDefaults.classId}

@@ -4,8 +4,10 @@ Schema overview:
 - users                — accounts (username + argon2 password hash)
 - sessions             — server-side login sessions (token hash stored)
 - classes              — per-user classes with a hex color
-- assignments          — tasks with a class, due date, progress (step 5), priority
-- assignment_links     — optional labeled URLs per assignment
+- items                — unified trackable entries: assignments (with progress),
+                         quizzes, and exams. ``kind`` discriminates; ``progress``
+                         is NULL for quizzes/exams (no completion semantics).
+- item_links           — optional labeled URLs per item
 - push_subscriptions   — Web Push endpoints (one per user/device)
 - notification_schedules — per-user daily notification settings (1:1 with users)
 
@@ -59,9 +61,7 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     classes: Mapped[list[Class]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    assignments: Mapped[list[Assignment]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
+    items: Mapped[list[Item]] = relationship(back_populates="user", cascade="all, delete-orphan")
     push_subscriptions: Mapped[list[PushSubscription]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
@@ -117,42 +117,60 @@ class Class(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="classes")
-    assignments: Mapped[list[Assignment]] = relationship(
-        back_populates="class_", cascade="all, delete-orphan"
-    )
+    items: Mapped[list[Item]] = relationship(back_populates="class_", cascade="all, delete-orphan")
 
 
-class Assignment(Base):
-    __tablename__ = "assignments"
+# Valid values for Item.kind. Shared with schemas/web; kept here as the source
+# of truth for the DB CHECK constraint.
+ITEM_KINDS = ("assignment", "quiz", "exam")
+
+
+class Item(Base):
+    """A trackable entry: assignment (progress 0-100, step 5), quiz, or exam.
+
+    Assignments carry progress and a derived ``is_complete``. Quizzes and exams
+    are dated events for a class — they have no progress/completion, so
+    ``progress`` stays NULL for them (enforced in the API schema).
+    """
+
+    __tablename__ = "items"
     __table_args__ = (
-        # Keyset pagination for the home list.
-        Index("ix_assignments_user_due", "user_id", "due_at", "id"),
-        # Fast path for "hide completed".
+        # Keyset pagination for per-kind lists (library pages, home, sidebar).
+        Index("ix_items_user_kind_due", "user_id", "kind", "due_at", "id"),
+        # Fast path for "hide completed" on assignment lists.
         Index(
-            "ix_assignments_user_due_active",
+            "ix_items_user_kind_due_active",
             "user_id",
+            "kind",
             "due_at",
             "id",
-            postgresql_where=text("progress < 100"),
+            postgresql_where=text("kind = 'assignment' AND progress < 100"),
         ),
-        Index("ix_assignments_class_id", "class_id"),
-        CheckConstraint("progress >= 0 AND progress <= 100", name="ck_assignments_progress_range"),
-        CheckConstraint("progress % 5 = 0", name="ck_assignments_progress_step"),
+        Index("ix_items_class_id", "class_id"),
+        CheckConstraint("kind IN ('assignment', 'quiz', 'exam')", name="ck_items_kind"),
+        # progress is NULL for quiz/exam rows; when present it follows the
+        # assignment rules (0-100, steps of 5).
+        CheckConstraint(
+            "progress IS NULL OR (progress >= 0 AND progress <= 100)",
+            name="ck_items_progress_range",
+        ),
+        CheckConstraint("progress IS NULL OR progress % 5 = 0", name="ck_items_progress_step"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid, primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     class_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("classes.id", ondelete="CASCADE"), nullable=False
     )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # 'assignment' | 'quiz' | 'exam'
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     notes: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    progress: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
+    progress: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     is_priority: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -161,28 +179,30 @@ class Assignment(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    user: Mapped[User] = relationship(back_populates="assignments")
-    class_: Mapped[Class] = relationship(back_populates="assignments")
-    links: Mapped[list[AssignmentLink]] = relationship(
-        back_populates="assignment",
+    user: Mapped[User] = relationship(back_populates="items")
+    class_: Mapped[Class] = relationship(back_populates="items")
+    links: Mapped[list[ItemLink]] = relationship(
+        back_populates="item",
         cascade="all, delete-orphan",
-        order_by="AssignmentLink.position",
+        order_by="ItemLink.position",
     )
 
     @property
     def is_complete(self) -> bool:
-        """Derived, never stored: complete == progress at 100."""
-        return self.progress == 100
+        """Derived, never stored: only assignments can be complete (progress 100)."""
+        return self.progress is not None and self.progress == 100
 
 
-class AssignmentLink(Base):
-    __tablename__ = "assignment_links"
+class ItemLink(Base):
+    """Optional labeled URL attached to an item."""
+
+    __tablename__ = "item_links"
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid, primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
     )
-    assignment_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False, index=True
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("items.id", ondelete="CASCADE"), nullable=False, index=True
     )
     url: Mapped[str] = mapped_column(Text, nullable=False)
     label: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -191,7 +211,7 @@ class AssignmentLink(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    assignment: Mapped[Assignment] = relationship(back_populates="links")
+    item: Mapped[Item] = relationship(back_populates="links")
 
 
 class PushSubscription(Base):

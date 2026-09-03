@@ -2,29 +2,32 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Clock, Flag } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { formatDueTime } from "../../lib/dates";
-import type { Assignment } from "../../lib/types";
+import type { Item } from "../../lib/types";
 import { ProgressSlider } from "./ProgressSlider";
-import { useUpdateAssignment } from "./useAssignments";
+import { useUpdateItem } from "./useItems";
 
 interface AssignmentCardProps {
-  assignment: Assignment;
+  /** Must be an assignment (progress is non-null); callers filter by kind. */
+  item: Item;
   onOpen: () => void;
 }
 
-export function AssignmentCard({ assignment, onOpen }: AssignmentCardProps) {
-  const updateAssignment = useUpdateAssignment();
-  const [progress, setProgress] = useState(assignment.progress);
+/** Row card for an assignment: class dot, title, due time, priority flag, and
+ *  the progress slider. Used on the Home dashboard and the Assignments page. */
+export function AssignmentCard({ item, onOpen }: AssignmentCardProps) {
+  const updateItem = useUpdateItem();
+  const [progress, setProgress] = useState(item.progress ?? 0);
 
   // Resync local progress when the refetched server value arrives.
   useEffect(() => {
-    setProgress(assignment.progress);
-  }, [assignment.progress]);
+    setProgress(item.progress ?? 0);
+  }, [item.progress]);
 
   const complete = progress === 100;
 
   function commitProgress(value: number) {
     setProgress(value);
-    void updateAssignment.mutateAsync({ id: assignment.id, progress: value });
+    void updateItem.mutateAsync({ id: item.id, progress: value });
   }
 
   return (
@@ -35,7 +38,7 @@ export function AssignmentCard({ assignment, onOpen }: AssignmentCardProps) {
       >
         <span
           className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: assignment.class.color }}
+          style={{ backgroundColor: item.class.color }}
           aria-hidden
         />
         <div className="min-w-0 flex-1">
@@ -46,19 +49,24 @@ export function AssignmentCard({ assignment, onOpen }: AssignmentCardProps) {
                 complete && "text-muted line-through",
               )}
             >
-              {assignment.title}
+              {item.title}
             </span>
-            {assignment.is_priority && (
-              <Flag className="h-3.5 w-3.5 shrink-0 fill-warning text-warning" aria-label="Priority" />
+            {item.is_priority && (
+              <Flag
+                className="h-3.5 w-3.5 shrink-0 fill-warning text-warning"
+                aria-label="Priority"
+              />
             )}
-            {complete && <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-label="Complete" />}
+            {complete && (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-label="Complete" />
+            )}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
             <span className="inline-flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              {formatDueTime(assignment.due_at)}
+              {formatDueTime(item.due_at)}
             </span>
-            <span className="truncate">{assignment.class.name}</span>
+            <span className="truncate">{item.class.name}</span>
           </div>
           <div className="mt-2" onClick={(e) => e.stopPropagation()}>
             <ProgressSlider value={progress} onCommit={commitProgress} />

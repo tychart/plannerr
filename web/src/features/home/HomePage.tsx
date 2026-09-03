@@ -1,124 +1,107 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link } from "react-router";
+import { ArrowRight, Plus } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { Spinner } from "../../components/ui/Spinner";
-import { Switch } from "../../components/ui/Switch";
 import { cn } from "../../lib/cn";
-import { groupAssignments } from "../../lib/dates";
-import type { Assignment } from "../../lib/types";
-import { AssignmentCard } from "../assignments/AssignmentCard";
-import { AssignmentDialog } from "../assignments/AssignmentDialog";
-import { useAssignments } from "../assignments/useAssignments";
+import { groupItems } from "../../lib/dates";
+import type { Item } from "../../lib/types";
+import { AssignmentCard } from "../items/AssignmentCard";
+import { ItemDialog } from "../items/ItemDialog";
+import { useItems } from "../items/useItems";
+import { UpcomingSection } from "./UpcomingSection";
 
+/** Home dashboard: the week's active assignments take the bulk of the space;
+ *  a sidebar shows upcoming quizzes and exams in their own sections. */
 export function HomePage() {
-  const [includeCompleted, setIncludeCompleted] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Assignment | null>(null);
-  const [defaults, setDefaults] = useState<{ classId?: string }>({});
+  const [editing, setEditing] = useState<Item | null>(null);
 
-  const query = useAssignments(includeCompleted);
-  const assignments = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
-  const groups = useMemo(() => groupAssignments(assignments), [assignments]);
-
-  // Infinite scroll: load the next page when the sentinel becomes visible.
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-        void fetchNextPage();
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  // Overdue + the next 7 days of ACTIVE assignments (window "horizon"), as one
+  // page. Completed and older items live on the Assignments page.
+  const query = useItems({ kind: "assignment", window: "horizon" });
+  const assignments = useMemo(() => query.data?.pages[0]?.items ?? [], [query.data]);
+  const groups = useMemo(() => groupItems(assignments), [assignments]);
 
   function openNew() {
     setEditing(null);
-    setDefaults({});
     setDialogOpen(true);
   }
 
-  function openEdit(assignment: Assignment) {
-    setEditing(assignment);
-    setDefaults({});
+  function openEdit(item: Item) {
+    setEditing(item);
     setDialogOpen(true);
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Assignments</h1>
+        <h1 className="text-2xl font-semibold text-foreground">Home</h1>
         <Button size="sm" onClick={openNew}>
-          <Plus className="h-4 w-4" /> New
+          <Plus className="h-4 w-4" /> New assignment
         </Button>
       </div>
 
-      <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted">
-        <Switch
-          checked={includeCompleted}
-          onCheckedChange={setIncludeCompleted}
-          aria-label="Show completed"
-        />
-        Show completed
-      </label>
-
-      {query.isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner />
-        </div>
-      ) : groups.length === 0 ? (
-        <EmptyState onAdd={openNew} />
-      ) : (
-        <div className="space-y-8">
-          {groups.map((group) => (
-            <section key={group.key} aria-label={group.label}>
-              <h2 className="mb-2 flex items-baseline gap-2">
-                <span
-                  className={cn(
-                    "text-sm font-semibold uppercase tracking-wide",
-                    group.isOverdue ? "text-danger" : "text-muted",
-                  )}
-                >
-                  {group.label}
-                </span>
-                <span className="text-xs text-muted">{group.items.length}</span>
-              </h2>
-              <ul className="space-y-2">
-                {group.items.map((assignment) => (
-                  <AssignmentCard
-                    key={assignment.id}
-                    assignment={assignment}
-                    onOpen={() => openEdit(assignment)}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))}
-
-          <div
-            ref={sentinelRef}
-            className="flex h-10 items-center justify-center text-xs text-muted"
-          >
-            {isFetchingNextPage ? (
-              <Spinner />
-            ) : hasNextPage ? (
-              "Scroll for more…"
-            ) : (
-              "You’re all caught up 🎉"
-            )}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:gap-6">
+        {/* Main column: the week's assignments (bulk of the space). */}
+        <div>
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+              Assignments
+            </h2>
+            <Link
+              to="/assignments"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              View all <ArrowRight className="h-3 w-3" />
+            </Link>
           </div>
-        </div>
-      )}
 
-      <AssignmentDialog
+          {query.isLoading ? (
+            <div className="flex justify-center py-16">
+              <Spinner />
+            </div>
+          ) : groups.length === 0 ? (
+            <EmptyState kind="assignment" onAdd={openNew} />
+          ) : (
+            <div className="space-y-6">
+              {groups.map((group) => (
+                <section key={group.key} aria-label={group.label}>
+                  <h3 className="mb-2 flex items-baseline gap-2">
+                    <span
+                      className={cn(
+                        "text-sm font-semibold uppercase tracking-wide",
+                        group.isOverdue ? "text-danger" : "text-muted",
+                      )}
+                    >
+                      {group.label}
+                    </span>
+                    <span className="text-xs text-muted">{group.items.length}</span>
+                  </h3>
+                  <ul className="space-y-2">
+                    {group.items.map((item) => (
+                      <AssignmentCard key={item.id} item={item} onOpen={() => openEdit(item)} />
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar: upcoming quizzes and exams (above the list on mobile). */}
+        <aside className="order-first space-y-6 lg:order-none lg:sticky lg:top-20">
+          <UpcomingSection kind="quiz" />
+          <UpcomingSection kind="exam" />
+        </aside>
+      </div>
+
+      <ItemDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         initial={editing}
-        defaults={defaults}
+        kind="assignment"
       />
     </div>
   );

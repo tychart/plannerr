@@ -1,15 +1,15 @@
 import { ExternalLink, Plus, X } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
-import type { AssignmentLink } from "../../lib/types";
-import type { LinkDraft } from "../../lib/assignment";
+import type { LinkDraft } from "../../lib/items";
+import type { ItemLink } from "../../lib/types";
 
 interface LinksEditorProps {
   links: LinkDraft[];
   onChange: (links: LinkDraft[]) => void;
 }
 
-/** Inline editor for an assignment's links (url + optional label). */
+/** Inline editor for an item's links (url + optional label). */
 export function LinksEditor({ links, onChange }: LinksEditorProps) {
   function update(index: number, patch: Partial<LinkDraft>) {
     onChange(links.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -58,10 +58,10 @@ export function LinksEditor({ links, onChange }: LinksEditorProps) {
 }
 
 interface LinksViewProps {
-  links: AssignmentLink[];
+  links: ItemLink[];
 }
 
-/** Read-only list of an assignment's saved links. */
+/** Read-only list of an item's saved links. */
 export function LinksView({ links }: LinksViewProps) {
   if (links.length === 0) return null;
   return (

@@ -27,12 +27,12 @@ from httpx import (
     HTTPStatusError,
     TimeoutException,
 )
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.models import Assignment, PushSubscription, User
+from app.models import Item, PushSubscription, User
 from app.schemas import CustomNotificationOut, TestNotificationOut
 
 logger = logging.getLogger(__name__)
@@ -40,11 +40,13 @@ logger = logging.getLogger(__name__)
 SummarySource = Literal["llm", "fallback"]
 
 SYSTEM_PROMPT = (
-    "You are a friendly study assistant for a personal assignment tracker. "
+    "You are a friendly study assistant for a personal planner. "
     "Summarize what the user needs to do today in 1-3 short, warm sentences. "
     "Plain text only — no markdown, no bullet lists, no emoji. "
+    "The list may contain assignments, quizzes, and exams; name the type when it "
+    "is not an assignment (e.g. \"Quiz: Ch 4\", \"Exam: Midterm\"). "
     "Mention overdue and high-priority items first. "
-    "Do not invent assignments or numbers that are not in the list. "
+    "Do not invent items or numbers that are not in the list. "
     "Keep it under 280 characters."
 )
 
@@ -101,16 +103,33 @@ def _due_label(due_local: datetime, local_now: datetime, is_overdue: bool) -> st
 
 
 def _item_dict(
-    a: Assignment, start_utc: datetime, tz: ZoneInfo | timezone, local_now: datetime
+    item: Item, start_utc: datetime, tz: ZoneInfo | timezone, local_now: datetime
 ) -> dict:
-    due_local = a.due_at.astimezone(tz)
+    due_local = item.due_at.astimezone(tz)
     return {
-        "title": a.title,
-        "class": a.class_.name,
-        "due": _due_label(due_local, local_now, a.due_at < start_utc),
-        "is_overdue": a.due_at < start_utc,
-        "is_priority": a.is_priority,
+        "kind": item.kind,
+        "title": item.title,
+        "class": item.class_.name,
+        "due": _due_label(due_local, local_now, item.due_at < start_utc),
+        "is_overdue": item.due_at < start_utc,
+        "is_priority": item.is_priority,
     }
+
+
+_KIND_PLURALS: dict[str, str] = {"assignment": "assignments", "quiz": "quizzes", "exam": "exams"}
+
+
+def _count_phrase(items: list[dict]) -> str:
+    """e.g. "2 assignments", "1 quiz", or "3 items" when kinds are mixed."""
+    counts = {kind: 0 for kind in _KIND_PLURALS}
+    for item in items:
+        counts[item["kind"]] = counts.get(item["kind"], 0) + 1
+    present = [kind for kind, n in counts.items() if n]
+    if len(present) != 1:
+        return f"{len(items)} item{'s' if len(items) != 1 else ''}"
+    kind = present[0]
+    n = counts[kind]
+    return f"{n} {_KIND_PLURALS[kind] if n != 1 else kind}"
 
 
 def _fallback_summary(items: list[dict]) -> str:
@@ -120,6 +139,7 @@ def _fallback_summary(items: list[dict]) -> str:
 
     def describe(group: list[dict]) -> str:
         return ", ".join(
+            f"{i['kind'].capitalize() + ': ' if i['kind'] != 'assignment' else ''}"
             f"{i['title']} ({i['class']}, {i['due']})"
             + (" — high priority" if i["is_priority"] else "")
             for i in group
@@ -127,21 +147,18 @@ def _fallback_summary(items: list[dict]) -> str:
 
     if overdue and due_today:
         return (
-            f"Good morning! {len(due_today)} assignment"
-            f"{'' if len(due_today) == 1 else 's'} due today: {describe(due_today)}. "
-            f"{len(overdue)} is overdue: {describe(overdue)}. Start with the overdue "
+            f"Good morning! {_count_phrase(due_today)} due today: {describe(due_today)}. "
+            f"{_count_phrase(overdue)} overdue: {describe(overdue)}. Start with the overdue "
             "one — you've got this!"
         )
     if due_today:
         return (
-            f"Good morning! {len(due_today)} assignment"
-            f"{'' if len(due_today) == 1 else 's'} due today: {describe(due_today)}. "
+            f"Good morning! {_count_phrase(due_today)} due today: {describe(due_today)}. "
             "You've got this!"
         )
     if overdue:
         return (
-            f"Good morning! {len(overdue)} assignment"
-            f"{'' if len(overdue) == 1 else 's'} overdue: {describe(overdue)}. "
+            f"Good morning! {_count_phrase(overdue)} overdue: {describe(overdue)}. "
             "Catch up when you can."
         )
     return "Good morning! Nothing is due today — a great day to get ahead."
@@ -187,7 +204,7 @@ async def _llm_summary(items: list[dict], today_str: str) -> str:
         {
             "role": "user",
             "content": json.dumps(
-                {"today": today_str, "assignments": items}, ensure_ascii=False
+                {"today": today_str, "items": items}, ensure_ascii=False
             ),
         },
     ]
@@ -307,6 +324,21 @@ async def _push_to_subscriptions(user: User, db: AsyncSession, payload: dict) ->
     return delivered
 
 
+def actionable_due_filter(start_utc: datetime, end_utc: datetime):
+    """SQLAlchemy predicate: items the daily summary cares about.
+
+    Everything due before the end of the user's local day (incl. overdue
+    assignments), excluding completed assignments. Past quizzes/exams are not
+    actionable (they have no completion state) and drop out — matching the
+    "Upcoming, today onward" rule used across the app.
+    """
+    return and_(
+        or_(Item.progress < 100, Item.progress.is_(None)),
+        Item.due_at < end_utc,
+        or_(Item.kind == "assignment", Item.due_at >= start_utc),
+    )
+
+
 async def send_daily_summary(
     user: User, db: AsyncSession, tz_name: str
 ) -> TestNotificationOut:
@@ -315,18 +347,15 @@ async def send_daily_summary(
     tz = local_now.tzinfo
 
     result = await db.execute(
-        select(Assignment)
-        .options(selectinload(Assignment.class_))
-        .where(
-            Assignment.user_id == user.id,
-            Assignment.progress < 100,
-            Assignment.due_at < end_utc,
-        )
-        .order_by(Assignment.due_at)
+        select(Item)
+        .options(selectinload(Item.class_))
+        .where(Item.user_id == user.id)
+        .where(actionable_due_filter(start_utc, end_utc))
+        .order_by(Item.due_at)
     )
-    assignments = result.scalars().all()
+    items_rows = result.scalars().all()
 
-    items = [_item_dict(a, start_utc, tz, local_now) for a in assignments]
+    items = [_item_dict(a, start_utc, tz, local_now) for a in items_rows]
     today_str = local_now.strftime("%A, %B %-d, %Y")
     summary, source = await generate_summary(items, today_str)
 

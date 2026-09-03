@@ -5,32 +5,36 @@ import { Field } from "../../components/ui/Field";
 import { Input } from "../../components/ui/Input";
 import { Select } from "../../components/ui/Select";
 import { Switch } from "../../components/ui/Switch";
-import type { AssignmentFormValues, LinkDraft } from "../../lib/assignment";
-import { partsFromDueAt } from "../../lib/assignment";
-import type { Assignment } from "../../lib/types";
+import type { ItemFormValues, LinkDraft } from "../../lib/items";
+import { KIND_DUE_LABELS, KIND_TITLE_LABELS, partsFromDueAt } from "../../lib/items";
+import type { Item, ItemKind } from "../../lib/types";
 import { useClasses } from "../classes/useClasses";
-import { LinksEditor } from "./AssignmentLinks";
+import { LinksEditor } from "./ItemLinks";
 import { NotesEditor } from "./NotesEditor";
 import { NotesView } from "./NotesView";
 import { ProgressSlider } from "./ProgressSlider";
 
 export type SubmitAction = "close" | "open" | "another-class" | "another-date";
 
-interface AssignmentFormProps {
+interface ItemFormProps {
+  kind: ItemKind;
   mode: "create" | "edit";
-  initial?: Assignment | null;
+  initial?: Item | null;
   defaultClassId?: string;
   defaultDueDate?: string;
   busy?: boolean;
   error?: string | null;
   /** Show a live rendered preview under the notes editor. */
   showNotesPreview?: boolean;
-  onSubmit: (values: AssignmentFormValues, action: SubmitAction) => Promise<void>;
+  onSubmit: (values: ItemFormValues, action: SubmitAction) => Promise<void>;
   onCancel?: () => void;
 }
 
-/** The single assignment form shared by the quick-add dialog and the page. */
-export function AssignmentForm({
+/** The single item form shared by the quick-add dialog and the detail page.
+ *  Kind is fixed by the entry point: assignments get a progress slider and a
+ *  "Title" field; quizzes/exams get a "Name" field and no progress. */
+export function ItemForm({
+  kind,
   mode,
   initial,
   defaultClassId,
@@ -40,15 +44,18 @@ export function AssignmentForm({
   showNotesPreview = false,
   onSubmit,
   onCancel,
-}: AssignmentFormProps) {
+}: ItemFormProps) {
   const { data: classes } = useClasses();
+  const isAssignment = kind === "assignment";
 
   const [title, setTitle] = useState(initial?.title ?? "");
   const [classId, setClassId] = useState(
     initial?.class.id ?? defaultClassId ?? classes?.[0]?.id ?? "",
   );
   const parts = initial ? partsFromDueAt(initial.due_at) : null;
-  const [dueDate, setDueDate] = useState(parts?.date ?? defaultDueDate ?? format(new Date(), "yyyy-MM-dd"));
+  const [dueDate, setDueDate] = useState(
+    parts?.date ?? defaultDueDate ?? format(new Date(), "yyyy-MM-dd"),
+  );
   const [dueTime, setDueTime] = useState(parts?.time ?? "");
   const [progress, setProgress] = useState(initial?.progress ?? 0);
   const [isPriority, setIsPriority] = useState(initial?.is_priority ?? false);
@@ -58,7 +65,8 @@ export function AssignmentForm({
   );
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  const values = (): AssignmentFormValues => ({
+  const values = (): ItemFormValues => ({
+    kind,
     title,
     class_id: classId,
     due_date: dueDate,
@@ -71,7 +79,7 @@ export function AssignmentForm({
 
   function validate(): boolean {
     if (!title.trim()) {
-      setValidationError("Title is required.");
+      setValidationError(isAssignment ? "Title is required." : "Name is required.");
       return false;
     }
     if (!classId) {
@@ -79,7 +87,7 @@ export function AssignmentForm({
       return false;
     }
     if (!dueDate) {
-      setValidationError("Pick a due date.");
+      setValidationError("Pick a date.");
       return false;
     }
     setValidationError(null);
@@ -98,18 +106,18 @@ export function AssignmentForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <Field label="Title" htmlFor="assignment-title">
+      <Field label={KIND_TITLE_LABELS[kind]} htmlFor="item-title">
         <Input
-          id="assignment-title"
+          id="item-title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Problem set 3"
+          placeholder={isAssignment ? "e.g. Problem set 3" : "e.g. Chapter 4 quiz"}
           maxLength={200}
         />
       </Field>
 
-      <Field label="Class" htmlFor="assignment-class">
-        <Select id="assignment-class" value={classId} onChange={(e) => setClassId(e.target.value)}>
+      <Field label="Class" htmlFor="item-class">
+        <Select id="item-class" value={classId} onChange={(e) => setClassId(e.target.value)}>
           <option value="" disabled>
             Select a class…
           </option>
@@ -122,17 +130,17 @@ export function AssignmentForm({
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Due date" htmlFor="assignment-date">
+        <Field label={KIND_DUE_LABELS[kind]} htmlFor="item-date">
           <Input
-            id="assignment-date"
+            id="item-date"
             type="date"
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
           />
         </Field>
-        <Field label="Due time (optional)" htmlFor="assignment-time">
+        <Field label={`${KIND_DUE_LABELS[kind]} time (optional)`} htmlFor="item-time">
           <Input
-            id="assignment-time"
+            id="item-time"
             type="time"
             value={dueTime}
             onChange={(e) => setDueTime(e.target.value)}
@@ -140,9 +148,11 @@ export function AssignmentForm({
         </Field>
       </div>
 
-      <Field label={`Progress — ${progress}%`}>
-        <ProgressSlider value={progress} onCommit={setProgress} />
-      </Field>
+      {isAssignment && (
+        <Field label={`Progress — ${progress}%`}>
+          <ProgressSlider value={progress} onCommit={setProgress} />
+        </Field>
+      )}
 
       <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-3 py-2.5">
         <span className="text-sm font-medium text-foreground">Priority</span>

@@ -3,6 +3,7 @@ import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
 import { Spinner } from "../../components/ui/Spinner";
+import { formatItemCounts, KIND_LABELS } from "../../lib/items";
 import type { ClassItem } from "../../lib/types";
 import { useClasses, useDeleteClass, useDeletePreview } from "./useClasses";
 
@@ -12,7 +13,8 @@ interface ClassDeleteDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** Confirm-delete dialog: lists affected assignments and offers transfer. */
+/** Confirm-delete dialog: lists every affected item (assignments, quizzes,
+ *  exams) and offers to transfer them all to another class first. */
 export function ClassDeleteDialog({ cls, open, onOpenChange }: ClassDeleteDialogProps) {
   const { data: preview, isLoading } = useDeletePreview(cls?.id ?? null);
   const { data: classes } = useClasses();
@@ -31,6 +33,7 @@ export function ClassDeleteDialog({ cls, open, onOpenChange }: ClassDeleteDialog
   const target = cls;
 
   const others = (classes ?? []).filter((c) => c.id !== target.id);
+  const hasItems = (preview?.total ?? 0) > 0;
 
   async function confirm() {
     setError(null);
@@ -47,35 +50,35 @@ export function ClassDeleteDialog({ cls, open, onOpenChange }: ClassDeleteDialog
       open={open}
       onOpenChange={onOpenChange}
       title={`Delete “${target.name}”?`}
-      description="This permanently deletes the class and, unless transferred, its assignments."
+      description="This permanently deletes the class and, unless transferred, everything in it — assignments, quizzes, and exams."
     >
       <div className="space-y-4">
         {isLoading ? (
           <div className="flex justify-center py-6">
             <Spinner />
           </div>
-        ) : preview && preview.assignment_count > 0 ? (
+        ) : hasItems ? (
           <>
             <p className="text-sm text-muted">
-              {preview.assignment_count} assignment{preview.assignment_count === 1 ? "" : "s"} will be
-              deleted:
+              {preview && formatItemCounts(preview.counts)} will be deleted:
             </p>
             <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border bg-surface p-3 text-sm">
-              {preview.assignments.map((a) => (
-                <li key={a.id} className="truncate text-foreground">
-                  {a.title}
+              {preview?.items.map((item) => (
+                <li key={item.id} className="flex items-baseline gap-2 text-foreground">
+                  <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted">
+                    {KIND_LABELS[item.kind]}
+                  </span>
+                  <span className="truncate">{item.title}</span>
                 </li>
               ))}
-              {preview.assignment_count > preview.assignments.length && (
-                <li className="text-muted">
-                  …and {preview.assignment_count - preview.assignments.length} more
-                </li>
+              {preview && preview.total > preview.items.length && (
+                <li className="text-muted">…and {preview.total - preview.items.length} more</li>
               )}
             </ul>
             {others.length > 0 && (
               <div className="space-y-1.5">
                 <label htmlFor="transfer-to" className="block text-sm font-medium text-foreground">
-                  Or transfer assignments to another class
+                  Or transfer all items to another class
                 </label>
                 <Select
                   id="transfer-to"
@@ -94,7 +97,7 @@ export function ClassDeleteDialog({ cls, open, onOpenChange }: ClassDeleteDialog
           </>
         ) : (
           <p className="text-sm text-muted">
-            This class has no assignments, so nothing else will be deleted.
+            This class has no items, so nothing else will be deleted.
           </p>
         )}
 
@@ -104,7 +107,11 @@ export function ClassDeleteDialog({ cls, open, onOpenChange }: ClassDeleteDialog
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="danger" onClick={() => void confirm()} disabled={deleteClass.isPending || isLoading}>
+          <Button
+            variant="danger"
+            onClick={() => void confirm()}
+            disabled={deleteClass.isPending || isLoading}
+          >
             {transferTo ? "Transfer & delete" : "Delete class"}
           </Button>
         </div>

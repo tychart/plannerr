@@ -25,9 +25,9 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.db import SessionFactory
-from app.models import Assignment, NotificationSchedule, PushSubscription, User
+from app.models import Item, NotificationSchedule, PushSubscription, User
 from app.schemas import NotificationScheduleIn, NotificationScheduleOut
-from app.services.summary import send_daily_summary, today_bounds
+from app.services.summary import actionable_due_filter, send_daily_summary, today_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -87,19 +87,19 @@ async def save_schedule(
     return _to_out(row)
 
 
-async def has_assignments_due(
+async def has_items_due(
     user_id, db: AsyncSession, tz_name: str, now: datetime | None = None
 ) -> bool:
-    """True when the user has an actionable assignment due before end of local today."""
-    _, _, end_utc = today_bounds(tz_name, now)
+    """True when the user has an actionable item due before end of local today.
+
+    Includes overdue/active assignments plus today's quizzes and exams.
+    """
+    _, start_utc, end_utc = today_bounds(tz_name, now)
     count = await db.scalar(
         select(func.count())
-        .select_from(Assignment)
-        .where(
-            Assignment.user_id == user_id,
-            Assignment.progress < 100,
-            Assignment.due_at < end_utc,
-        )
+        .select_from(Item)
+        .where(Item.user_id == user_id)
+        .where(actionable_due_filter(start_utc, end_utc))
     )
     return bool(count)
 
@@ -130,7 +130,7 @@ async def check_and_send_due(now: datetime | None = None) -> int:
                     continue
                 if row.last_sent_date == local_now.date():
                     continue
-                if not await has_assignments_due(row.user_id, db, row.timezone, now):
+                if not await has_items_due(row.user_id, db, row.timezone, now):
                     logger.info("Skipping daily summary for user %s: nothing due today", row.user_id)
                 else:
                     device_count = await db.scalar(
