@@ -26,6 +26,12 @@ plus optional AI-written daily push summaries.
   *all* items of that type with server-side search (title/notes), class
   filter, and due-date/completion filters; every item kind also has a
   focus-mode detail page (`/assignments/:id`, `/quizzes/:id`, `/exams/:id`).
+- **Responsive navigation** — on phones and narrow windows (< 768px) the
+  top-bar links fold into a slide-out menu (hamburger → right-hand sheet)
+  with comfortable 44px touch targets; the theme toggle stays one tap away
+  while your username and log-out move into the sheet. Tablets and desktops
+  keep the full inline nav — both views render from one shared list, so new
+  pages appear everywhere automatically.
 - **Notifications** — an AI-written daily summary of what's due, delivered as a
   push notification (Web Push). Settings can **schedule a daily send time**
   (only fires on days something is due), send one now with **Send today's
@@ -154,8 +160,9 @@ cd web && npm run test
 │   └── tests/             # pytest (auth, classes, items, notifications)
 └── web/                   # React + TS + Vite + Tailwind v4
     └── src/
-        ├── lib/           # api client, types, items, dates, color, progress
-        └── features/      # auth, theme, home, items, classes, settings
+        ├── lib/           # api client, types, items, dates, color, progress, push, backup
+        ├── components/    # app shell + mobile menu; shared ui primitives (Button, Modal, …)
+        └── features/      # auth, theme, home, items, classes, notifications, settings
 ```
 
 ## Push notifications (PWA)
