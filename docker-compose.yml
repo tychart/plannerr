@@ -28,13 +28,25 @@ services:
         condition: service_healthy
     expose:
       - "8000" # internal only; the web container proxies /api
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 30s
 
   web:
     build: ./web
     ports:
       - "${WEB_PORT:-8080}:80"
     depends_on:
-      - server
+      server:
+        condition: service_healthy
 
 volumes:
   pgdata:

@@ -44,6 +44,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     finally:
         scheduler.shutdown(wait=False)
 
+        # Close pooled DB connections during graceful container shutdown. This
+        # keeps Postgres from having to forcibly terminate server connections,
+        # especially when compose providers stop services in a surprising order.
+        from app.db import engine
+
+        await engine.dispose()
+
 
 def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
     """Return a JSON 429 instead of slowapi's plain-text default."""

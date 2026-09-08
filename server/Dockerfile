@@ -21,8 +21,12 @@ RUN uv sync --frozen --no-dev
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
+COPY docker-entrypoint.sh /usr/local/bin/plannerr-server-entrypoint
+RUN chmod +x /usr/local/bin/plannerr-server-entrypoint
 
 EXPOSE 8000
 
-# Migrations run automatically on boot, then the API starts.
-CMD ["sh", "-c", "uv run --no-sync alembic upgrade head && uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Migrations run automatically on boot, then the API starts. The entrypoint
+# uses exec so uvicorn receives Podman/Docker stop signals directly.
+ENTRYPOINT ["plannerr-server-entrypoint"]
+CMD ["/app/.venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
