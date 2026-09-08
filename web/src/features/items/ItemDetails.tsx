@@ -3,7 +3,6 @@ import { Link } from "react-router";
 import { CalendarDays, CheckCircle2, Clock, ExternalLink, Flag } from "lucide-react";
 import { ClassBadge } from "../../components/ClassBadge";
 import { Button } from "../../components/ui/Button";
-import { cn } from "../../lib/cn";
 import { KIND_LABELS, itemDueLabel, kindRoute } from "../../lib/items";
 import type { Item } from "../../lib/types";
 import { LinksView } from "./ItemLinks";
@@ -105,9 +104,6 @@ export function ItemDetails({ item, onEdit, showOpenLink = false }: ItemDetailsP
                   disabled={updateItem.isPending}
                 />
               </div>
-              <p className={cn("mt-1 text-xs text-muted", complete && "text-success")}>
-                Drag to update progress without opening edit mode.
-              </p>
             </div>
           )}
         </div>
