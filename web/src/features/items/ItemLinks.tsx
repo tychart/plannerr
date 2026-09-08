@@ -61,6 +61,16 @@ interface LinksViewProps {
   links: ItemLink[];
 }
 
+function niceUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/$/, "");
+    return `${parsed.hostname}${path}`;
+  } catch {
+    return url.replace(/^https?:\/\//, "");
+  }
+}
+
 /** Read-only list of an item's saved links. */
 export function LinksView({ links }: LinksViewProps) {
   if (links.length === 0) return null;
@@ -72,10 +82,11 @@ export function LinksView({ links }: LinksViewProps) {
             href={link.url}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-surface px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-surface-2"
+            title={link.url}
+            className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <ExternalLink className="h-3 w-3 shrink-0" />
-            <span className="truncate">{link.label || link.url}</span>
+            <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="truncate">{link.label || niceUrl(link.url)}</span>
           </a>
         </li>
       ))}

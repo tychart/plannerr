@@ -7,6 +7,7 @@ import { KIND_LABELS, kindRoute } from "../../lib/items";
 import type { Item, ItemKind } from "../../lib/types";
 import { ItemDialog } from "../items/ItemDialog";
 import { ItemRow } from "../items/ItemRow";
+import { LazyItemViewDialog } from "../items/LazyItemViewDialog";
 import { useItems } from "../items/useItems";
 
 interface UpcomingSectionProps {
@@ -20,7 +21,7 @@ export function UpcomingSection({ kind }: UpcomingSectionProps) {
   const query = useItems({ kind, window: "upcoming", limit: 10 });
   const items = query.data?.pages[0]?.items ?? [];
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Item | null>(null);
+  const [viewing, setViewing] = useState<Item | null>(null);
 
   const plural = kind === "quiz" ? "Quizzes" : "Exams";
   const loading = query.isLoading;
@@ -36,7 +37,6 @@ export function UpcomingSection({ kind }: UpcomingSectionProps) {
           size="sm"
           aria-label={`New ${kind}`}
           onClick={() => {
-            setEditing(null);
             setDialogOpen(true);
           }}
         >
@@ -56,14 +56,7 @@ export function UpcomingSection({ kind }: UpcomingSectionProps) {
         <>
           <ul className="space-y-2">
             {items.map((item) => (
-              <ItemRow
-                key={item.id}
-                item={item}
-                onOpen={() => {
-                  setEditing(item);
-                  setDialogOpen(true);
-                }}
-              />
+              <ItemRow key={item.id} item={item} onOpen={() => setViewing(item)} />
             ))}
           </ul>
           <Link
@@ -75,7 +68,13 @@ export function UpcomingSection({ kind }: UpcomingSectionProps) {
         </>
       )}
 
-      <ItemDialog open={dialogOpen} onOpenChange={setDialogOpen} initial={editing} kind={kind} />
+      <ItemDialog open={dialogOpen} onOpenChange={setDialogOpen} kind={kind} />
+      <LazyItemViewDialog
+        item={viewing}
+        onOpenChange={(open) => {
+          if (!open) setViewing(null);
+        }}
+      />
     </section>
   );
 }

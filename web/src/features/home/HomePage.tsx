@@ -9,6 +9,7 @@ import { groupItems } from "../../lib/dates";
 import type { Item } from "../../lib/types";
 import { AssignmentCard } from "../items/AssignmentCard";
 import { ItemDialog } from "../items/ItemDialog";
+import { LazyItemViewDialog } from "../items/LazyItemViewDialog";
 import { useItems } from "../items/useItems";
 import { UpcomingSection } from "./UpcomingSection";
 
@@ -16,7 +17,7 @@ import { UpcomingSection } from "./UpcomingSection";
  *  a sidebar shows upcoming quizzes and exams in their own sections. */
 export function HomePage() {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Item | null>(null);
+  const [viewing, setViewing] = useState<Item | null>(null);
 
   // Overdue + the next 7 days of ACTIVE assignments (window "horizon"), as one
   // page. Completed and older items live on the Assignments page.
@@ -25,13 +26,11 @@ export function HomePage() {
   const groups = useMemo(() => groupItems(assignments), [assignments]);
 
   function openNew() {
-    setEditing(null);
     setDialogOpen(true);
   }
 
-  function openEdit(item: Item) {
-    setEditing(item);
-    setDialogOpen(true);
+  function openView(item: Item) {
+    setViewing(item);
   }
 
   return (
@@ -81,7 +80,7 @@ export function HomePage() {
                   </h3>
                   <ul className="space-y-2">
                     {group.items.map((item) => (
-                      <AssignmentCard key={item.id} item={item} onOpen={() => openEdit(item)} />
+                      <AssignmentCard key={item.id} item={item} onOpen={() => openView(item)} />
                     ))}
                   </ul>
                 </section>
@@ -97,11 +96,12 @@ export function HomePage() {
         </aside>
       </div>
 
-      <ItemDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        initial={editing}
-        kind="assignment"
+      <ItemDialog open={dialogOpen} onOpenChange={setDialogOpen} kind="assignment" />
+      <LazyItemViewDialog
+        item={viewing}
+        onOpenChange={(open) => {
+          if (!open) setViewing(null);
+        }}
       />
     </div>
   );

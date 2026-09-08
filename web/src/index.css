@@ -141,48 +141,73 @@
     @apply text-sm leading-relaxed text-foreground;
   }
   .markdown > * + * {
-    @apply mt-3;
+    @apply mt-4;
   }
   .markdown h1,
   .markdown h2,
   .markdown h3 {
-    @apply font-semibold;
+    @apply text-balance font-semibold tracking-tight;
   }
   .markdown h1 {
-    @apply text-lg;
+    @apply text-xl;
   }
   .markdown h2 {
+    @apply text-lg;
+  }
+  .markdown h3 {
     @apply text-base;
   }
+  .markdown p {
+    @apply break-words;
+  }
+  .markdown strong {
+    @apply font-semibold;
+  }
   .markdown ul {
-    @apply list-disc pl-5;
+    @apply list-disc space-y-1 pl-5;
   }
   .markdown ol {
-    @apply list-decimal pl-5;
+    @apply list-decimal space-y-1 pl-5;
+  }
+  .markdown li > ul,
+  .markdown li > ol {
+    @apply mt-1;
+  }
+  .markdown input[type="checkbox"] {
+    @apply mr-2 align-middle accent-primary;
   }
   .markdown a {
-    @apply text-primary underline;
+    @apply break-words rounded-sm font-medium text-primary underline decoration-primary/40 underline-offset-2 transition-colors hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
   }
   .markdown code {
-    @apply rounded bg-surface-2 px-1 py-0.5 font-mono text-[0.85em];
+    @apply rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[0.85em];
   }
   .markdown pre {
-    @apply overflow-x-auto rounded-lg bg-surface-2 p-3;
+    @apply overflow-x-auto rounded-xl border border-border bg-background p-3 shadow-sm;
   }
   .markdown pre code {
     @apply bg-transparent p-0;
   }
   .markdown blockquote {
-    @apply border-l-2 border-border pl-3 text-muted;
+    @apply rounded-r-xl border-l-4 border-primary bg-primary-soft px-4 py-2 text-foreground;
   }
   .markdown table {
-    @apply w-full border-collapse text-sm;
+    @apply block w-full overflow-x-auto rounded-lg border border-border text-sm;
+  }
+  .markdown thead {
+    @apply bg-surface-2;
   }
   .markdown th,
   .markdown td {
-    @apply border border-border px-2 py-1 text-left;
+    @apply border-b border-border px-3 py-2 text-left align-top;
+  }
+  .markdown tr:last-child td {
+    @apply border-b-0;
   }
   .markdown hr {
     @apply border-border;
+  }
+  .markdown img {
+    @apply max-h-80 rounded-xl border border-border object-contain;
   }
 }

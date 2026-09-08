@@ -17,6 +17,7 @@ import { useClasses } from "../classes/useClasses";
 import { AssignmentCard } from "./AssignmentCard";
 import { ItemDialog } from "./ItemDialog";
 import { ItemRow } from "./ItemRow";
+import { LazyItemViewDialog } from "./LazyItemViewDialog";
 import { useItems } from "./useItems";
 
 interface LibraryConfig {
@@ -57,7 +58,7 @@ export function ItemLibraryPage({ kind }: ItemLibraryPageProps) {
   const [window, setWindow] = useState<ItemWindow | "">(cfg.defaultWindow);
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Item | null>(null);
+  const [viewing, setViewing] = useState<Item | null>(null);
 
   // Debounce the search box (server-side search round-trips per keystroke).
   useEffect(() => {
@@ -96,13 +97,11 @@ export function ItemLibraryPage({ kind }: ItemLibraryPageProps) {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   function openNew() {
-    setEditing(null);
     setDialogOpen(true);
   }
 
-  function openEdit(item: Item) {
-    setEditing(item);
-    setDialogOpen(true);
+  function openView(item: Item) {
+    setViewing(item);
   }
 
   const filterActive = Boolean(
@@ -204,9 +203,9 @@ export function ItemLibraryPage({ kind }: ItemLibraryPageProps) {
               <ul className="space-y-2">
                 {group.items.map((item) =>
                   kind === "assignment" ? (
-                    <AssignmentCard key={item.id} item={item} onOpen={() => openEdit(item)} />
+                    <AssignmentCard key={item.id} item={item} onOpen={() => openView(item)} />
                   ) : (
-                    <ItemRow key={item.id} item={item} onOpen={() => openEdit(item)} />
+                    <ItemRow key={item.id} item={item} onOpen={() => openView(item)} />
                   ),
                 )}
               </ul>
@@ -228,7 +227,13 @@ export function ItemLibraryPage({ kind }: ItemLibraryPageProps) {
         </div>
       )}
 
-      <ItemDialog open={dialogOpen} onOpenChange={setDialogOpen} initial={editing} kind={kind} />
+      <ItemDialog open={dialogOpen} onOpenChange={setDialogOpen} kind={kind} />
+      <LazyItemViewDialog
+        item={viewing}
+        onOpenChange={(open) => {
+          if (!open) setViewing(null);
+        }}
+      />
     </div>
   );
 }
