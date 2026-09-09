@@ -19,11 +19,17 @@
 #   scripts/dev.sh status    show what is up
 #   scripts/dev.sh help
 #
+# Log streams are color-coded while following on a terminal:
+#   db (blue) · server/API (green) · web/Vite (magenta) — set NO_COLOR=1 to
+#   disable. When the db is compose-managed its container logs are mirrored
+#   to .dev-logs/db.log so they join the follower too.
+#
 # Skips / tweaks (export before running):
 #   DEV_NO_DB=1 | DEV_NO_SERVER=1 | DEV_NO_WEB=1   skip that piece
 #   PM=bun | PM=npm                                force the web package manager
 #   COMPOSE_CMD="docker compose"                   compose binary (default: podman-compose)
 #   DEV_NO_FOLLOW=1                                don't tail logs after starting
+#   NO_COLOR=1                                     disable ANSI colors entirely
 #
 # Notes:
 #   * Missing .env / server/.env are seeded from .env.example with throwaway
@@ -41,13 +47,18 @@ cd "$ROOT"
 LOG_DIR="$ROOT/.dev-logs"
 SERVER_LOG="$LOG_DIR/server.log"
 WEB_LOG="$LOG_DIR/web.log"
+DB_LOG="$LOG_DIR/db.log"            # mirror of the db container's logs
+DB_MIRROR_PID="$LOG_DIR/db-mirror.pid"
 PID_FILE="$LOG_DIR/dev.pids"
 
-# --- colors (only when stdout is a terminal) ---------------------------------
-if [[ -t 1 ]]; then
-  BOLD=$'\e[1m'; GRN=$'\e[32m'; YEL=$'\e[33m'; RED=$'\e[31m'; OFF=$'\e[0m'
+# --- colors (only when stdout is a terminal and NO_COLOR is unset) ----------
+if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
+  BOLD=$'\e[1m'; DIM=$'\e[2m'; GRN=$'\e[32m'; YEL=$'\e[33m'; RED=$'\e[31m'; OFF=$'\e[0m'
+  C_DB=$'\e[1;34m'     # database log stream
+  C_SERVER=$'\e[1;32m' # API server log stream
+  C_WEB=$'\e[1;35m'    # web / Vite log stream
 else
-  BOLD=; GRN=; YEL=; RED=; OFF=
+  BOLD=; DIM=; GRN=; YEL=; RED=; OFF=; C_DB=; C_SERVER=; C_WEB=
 fi
 info() { printf '%s\n' "${GRN}==>${OFF} $*"; }
 warn() { printf '%s\n' "${YEL}warning:${OFF} $*" >&2; }
@@ -155,12 +166,112 @@ start_web() {
   pids+=("$!")
 }
 
+# --- colored log following ----------------------------------------------------
+container_engine() {
+  # Underlying engine binary (podman/docker) for the chosen compose command.
+  detect_compose 2>/dev/null || return 1
+  local e
+  e="${COMPOSE_CMD%% *}"
+  case "$e" in
+    podman-compose) printf 'podman' ;;
+    docker-compose) printf 'docker' ;;
+    *) printf '%s' "$e" ;;
+  esac
+}
+
+db_container_id() {
+  # Id of the running compose db container (empty if not running/compose-managed).
+  # podman-compose lacks `ps -q db`, so match on the compose labels both
+  # engines attach (com.docker.compose.project / .service).
+  local engine project
+  engine="$(container_engine)" || return 0
+  project="${COMPOSE_PROJECT_NAME:-$(basename "$ROOT")}"
+  "$engine" ps \
+    --filter "label=com.docker.compose.project=$project" \
+    --filter "label=com.docker.compose.service=db" \
+    --format '{{.ID}}' 2>/dev/null | head -n1
+}
+
+start_db_log_mirror() {
+  # Mirror the db container's logs into $DB_LOG so they join the follower.
+  if [[ ${DEV_NO_DB:-0} == 1 ]]; then
+    rm -f "$DB_LOG" # not compose-managed here — drop any stale stream
+    return 0
+  fi
+  if [[ -s $DB_MIRROR_PID ]] && kill -0 "$(<$DB_MIRROR_PID)" 2>/dev/null; then
+    return 0 # already mirroring
+  fi
+  local engine cid
+  engine="$(container_engine)" || { info "no compose tool — db log stream skipped."; return 0; }
+  cid="$(db_container_id)"
+  if [[ -z "$cid" ]]; then
+    rm -f "$DB_LOG" # container not running — drop any stale stream
+    info "no compose-managed db container — db log stream skipped."
+    return 0
+  fi
+  : >"$DB_LOG"
+  ( "$engine" logs --tail 100 -f "$cid" ) >"$DB_LOG" 2>&1 &
+  echo "$!" >"$DB_MIRROR_PID"
+  info "mirroring db container logs → .dev-logs/db.log"
+}
+
+stop_db_log_mirror() {
+  [[ -s $DB_MIRROR_PID ]] || return 0
+  local pid
+  pid="$(<$DB_MIRROR_PID)"
+  rm -f "$DB_MIRROR_PID"
+  kill -TERM "$pid" 2>/dev/null || true
+}
+
+# Reads `tail -F` multi-file output and colorizes each stream. GNU tail emits
+# a "==> <file> <==" header whenever it switches files, which tells us which
+# service the following lines belong to.
+_stream_reader() {
+  local line file tag color
+  while IFS= read -r line; do
+    if [[ $line == "==> "*" <==" ]]; then
+      file=${line#"==> "}
+      file=${file%" <=="}
+      case "$file" in
+        */server.log) tag=server; color=$C_SERVER ;;
+        */web.log) tag=web; color=$C_WEB ;;
+        */db.log) tag=db; color=$C_DB ;;
+        *) tag=; color= ;;
+      esac
+      if [[ -n $tag ]]; then
+        printf '%s\n' "${color}${DIM}──── ${tag} ────${OFF}"
+      else
+        printf '%s\n' "$line"
+      fi
+      continue
+    fi
+    if [[ -n $tag ]]; then
+      printf '%s\n' "${color}[${tag}] ${line}${OFF}"
+    else
+      printf '%s\n' "$line"
+    fi
+  done
+}
+
+follow() {
+  # Tail server/web (and db when mirrored) logs — color-coded per stream on a
+  # terminal, plain multi-file tail otherwise.
+  local logs=("$SERVER_LOG" "$WEB_LOG")
+  [[ -f $DB_LOG ]] && logs+=("$DB_LOG")
+  if [[ -n $GRN ]]; then
+    tail -n +1 -F "${logs[@]}" | _stream_reader
+  else
+    tail -n +1 -F "${logs[@]}"
+  fi
+}
+
 # --- lifecycle ----------------------------------------------------------------
 pids=()
 cleanup() {
   trap - INT TERM EXIT
   local p
   for p in "${pids[@]:-}"; do kill -TERM "$p" 2>/dev/null || true; done
+  stop_db_log_mirror
   rm -f "$PID_FILE"
   wait 2>/dev/null || true
 }
@@ -187,12 +298,17 @@ start() {
   fi
 
   trap cleanup INT TERM EXIT
+  start_db_log_mirror
   info "following logs — Ctrl-C stops server + web (the db container keeps running)."
+  if [[ -n $GRN ]]; then
+    info "stream colors: ${C_DB}db${OFF}  ${C_SERVER}server${OFF}  ${C_WEB}web${OFF}  (NO_COLOR=1 disables)"
+  fi
   info "other commands: scripts/dev.sh {logs,stop,down,status}"
-  tail -n +1 -F "$SERVER_LOG" "$WEB_LOG"
+  follow
 }
 
 stop_dev() {
+  stop_db_log_mirror
   if [[ ! -f $PID_FILE ]]; then
     info "no tracked dev processes (no $PID_FILE)."
     warn "if something still listens on :8000/:5173, kill it manually (pgrep -af 'uvicorn|vite')."
@@ -241,9 +357,21 @@ status() {
 
 logs() {
   mkdir -p "$LOG_DIR"
-  [[ -f $SERVER_LOG || -f $WEB_LOG ]] || die "no logs yet — run 'scripts/dev.sh start' first"
-  info "tailing logs — Ctrl-C to stop"
-  tail -n +1 -F "$SERVER_LOG" "$WEB_LOG"
+  if [[ ! -f $SERVER_LOG && ! -f $WEB_LOG ]]; then
+    die "no logs yet — run 'scripts/dev.sh start' first"
+  fi
+  if [[ -n $GRN ]]; then
+    info "tailing logs — Ctrl-C to stop"
+    start_db_log_mirror
+    follow
+  else
+    info "not a terminal — showing the last lines of each log (use 'start' for live follow):"
+    for f in "$SERVER_LOG" "$WEB_LOG" "$DB_LOG"; do
+      [[ -f $f ]] || continue
+      echo "── $f ──"
+      tail -n 40 "$f"
+    done
+  fi
 }
 
 usage() {
