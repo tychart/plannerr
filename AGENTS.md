@@ -42,6 +42,7 @@ npm (`PM=bun|npm` to force). Logs in `.dev-logs/`.
 - `uv run alembic upgrade head` — apply migrations (server also does this on boot in compose)
 - `uv run uvicorn app.main:app --reload --port 8000` — API for local web dev
 - `uv run pytest` — needs a reachable Postgres (see Tests)
+- `scripts/refresh-server-deps.sh` — deliberate dep-update ritual: re-resolves within `pyproject.toml` ranges, syncs `.venv`, runs tests, shows the `uv.lock` diff. `uv.lock` stays committed + frozen in the image (unlike the web app — server ranges are unbounded `>=` and it runs migrations on boot)
 
 ### Local data & full stack
 - `docker compose up db` — Postgres on 127.0.0.1:5432 (loopback-only host mapping for dev/tests), creates `plannerr` + `plannerr_test`

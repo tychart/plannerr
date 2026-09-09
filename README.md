@@ -298,6 +298,13 @@ number and reason while the rest import.
   `bun install` layer, so to genuinely refresh them run
   `podman-compose build --pull=newer --no-cache web` (docker:
   `docker compose build --no-cache web`).
+- Server dependencies are the opposite: `uv.lock` is committed and the image
+  builds it frozen (`uv sync --frozen`). Refresh deliberately with
+  `scripts/refresh-server-deps.sh` — it re-resolves within `pyproject.toml`
+  ranges, runs tests, and shows the diff; commit the lock, then a plain
+  `podman-compose build server` re-runs the install layer (the lock is a build
+  input, so no `--no-cache` needed). Server ranges are unbounded `>=`, so this
+  is what stops majors from silently jumping on a rebuild.
 
 - Everything behind one host port: `web` (nginx) serves the built SPA and
   reverse-proxies `/api/*` to `server`, so the app is same-origin (no CORS,
