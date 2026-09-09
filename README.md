@@ -109,24 +109,45 @@ migrations apply before the API starts serving.
 
 ## Local development
 
-Postgres always runs in a container (Podman or Docker); Python and React run
-locally.
+For day-to-day work the whole stack comes up with one command — Postgres runs
+in a container (Podman or Docker) while the API and web app run on the host
+with hot reload:
 
 ```bash
-# 1. Database (postgres:18, port 5432)
+scripts/dev.sh            # db (container) + API :8000 + web :5173, follows logs
+# Ctrl-C stops the API + web dev servers; the db container keeps running.
+# Other commands: scripts/dev.sh {logs,stop,down,status}
+```
+
+The script seeds missing `.env` / `server/.env` from `.env.example` (throwaway
+local credentials, gitignored), applies Alembic migrations, and keeps logs in
+`.dev-logs/`. The web dev server runs under **bun** when available (preferred)
+and falls back to npm — force it with `PM=bun|npm`. Skip pieces with
+`DEV_NO_DB=1`, `DEV_NO_SERVER=1`, `DEV_NO_WEB=1`.
+
+> **PWA note:** the script runs `vite dev`, which never registers the service
+> worker (`devOptions.enabled: false`), so hot-reload iteration has no
+> precache/offline caching. The service worker only exists in *production*
+> builds — the compose stack (or `bun run build`) — which is where stale-cache
+> behavior shows up.
+
+Everything the script does is also runnable by hand, usually only when you're
+debugging one layer:
+
+```bash
+# 1. Database (postgres:18, published on 127.0.0.1:5432 for host-side dev)
 podman-compose up db        # or: docker compose up db
 
 # 2. Server — http://localhost:8000 (auto-reload)
 cd server
 uv sync
-cp ../.env.example .env            # DATABASE_URL points at localhost
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000
 
 # 3. Web — http://localhost:5173 (Vite proxies /api → :8000)
 cd web
-npm install
-npm run dev
+bun install                 # or: npm install
+bun run dev                 # or: npm run dev
 ```
 
 ## Environment variables
@@ -158,7 +179,7 @@ npm run dev
 cd server && uv run pytest
 
 # Web (Vitest unit tests for date grouping, color contrast, progress snapping):
-cd web && npm run test
+cd web && bun run test        # or: npm run test
 ```
 
 ## Project layout

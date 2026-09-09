@@ -2,22 +2,34 @@
 
 React 19 + TypeScript (strict) + Vite + Tailwind CSS v4 SPA.
 
+**Package manager:** bun is the primary workflow (`bun.lock` is committed).
+Every command below also works with npm (`npm install` / `npm run …`) — npm
+derives its own gitignored `package-lock.json`, so both stay in sync by
+construction.
+
 ## Development
 
+Run the whole app from the repo root with `scripts/dev.sh` (db + API + web),
+or just this half:
+
 ```bash
-npm install
-npm run dev        # http://localhost:5173, proxies /api → http://localhost:8000
+bun install                # or: npm install
+bun run dev                # http://localhost:5173, proxies /api → http://localhost:8000
 ```
+
+> The dev server never registers the service worker (`devOptions.enabled:
+> false`), so hot reload is free of PWA/offline caching — that only exists in
+> production builds.
 
 ## Scripts
 
-| Command          | What it does                    |
-| ---------------- | ------------------------------- |
-| `npm run dev`    | Vite dev server (hot reload)    |
-| `npm run build`  | `tsc -b` + production build     |
-| `npm run lint`   | oxlint                          |
-| `npm run test`   | Vitest unit tests (lib helpers) |
-| `npm run format` | Prettier (write)                |
+| Command          | npm equivalent  | What it does                    |
+| ---------------- | --------------- | ------------------------------- |
+| `bun run dev`    | `npm run dev`   | Vite dev server (hot reload)    |
+| `bun run build`  | `npm run build` | `tsc -b` + production build     |
+| `bun run lint`   | `npm run lint`  | oxlint                          |
+| `bun run test`   | `npm run test`  | Vitest unit tests (lib helpers) |
+| `bun run format` | `npm run format`| Prettier (write)                |
 
 ## Structure
 

@@ -7,6 +7,12 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-plannerr}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-plannerr}
+    ports:
+      # Loopback-only host access for local dev & tests (uvicorn/pytest on the
+      # host talk to localhost:5432). Never exposed on the LAN; the compose
+      # server ignores this mapping and reaches the db via the internal
+      # network. Remove this if you run your own Postgres on :5432.
+      - "127.0.0.1:5432:5432"
     volumes:
       # Postgres 18 keeps PGDATA under /var/lib/postgresql/18/docker.
       - pgdata:/var/lib/postgresql

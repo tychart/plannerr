@@ -1,13 +1,16 @@
 # syntax=docker/dockerfile:1
-# Plannerr web app — multi-stage: build with Node, serve with nginx.
-FROM node:26-alpine AS build
+# Plannerr web app — multi-stage: build with Bun, serve with nginx.
+# bun is the primary package manager: bun.lock is the lockfile of record
+# (keep it committed; never add package-lock.json back). `bun run build` runs
+# the same `tsc -b && vite build` script npm users get locally.
+FROM docker.io/oven/bun:1-alpine AS build
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN bun run build
 
 FROM nginx:alpine
 # The stock nginx image symlinks its logs to /dev/std{out,err}. Under rootless

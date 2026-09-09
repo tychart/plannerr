@@ -31,3 +31,6 @@ npm-debug.log*
 
 # ── Tooling artifacts ─────────────────────────────────────────────────────
 plans/
+
+# Local dev logs (scripts/dev.sh)
+.dev-logs/

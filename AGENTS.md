@@ -21,12 +21,21 @@ for code changes — keep it current.
 
 ## Commands
 
-### Web (`cd web`, Node ≥ 20.19)
-- `npm run dev` — Vite on :5173; proxies `/api` → http://localhost:8000 (**API must run on 8000**)
-- `npm run build` — `tsc -b && vite build` (run before declaring a change done)
-- `npm run lint` — oxlint (rules in `.oxlintrc.json`)
-- `npm run format` (prettier --write .) / `npm run format:check` — Prettier: `printWidth: 100`, semicolons, double quotes, trailing commas
-- `npm run test` — Vitest, pure unit tests only (see Tests)
+### Local dev — full stack, one terminal
+`scripts/dev.sh` starts the db container (detached, `127.0.0.1:5432`), applies
+Alembic migrations, then runs uvicorn (:8000, --reload) + the Vite dev server
+(:5173) in the background and follows their logs — Ctrl-C stops the dev servers,
+the db keeps running. Subcommands: `logs | stop | down | status`. Skips via
+`DEV_NO_DB|DEV_NO_SERVER|DEV_NO_WEB=1`; web runner is **bun** when present else
+npm (`PM=bun|npm` to force). Logs in `.dev-logs/`.
+
+### Web (`cd web`; **bun primary**, `npm run …` works too for node users)
+- `bun run dev` — Vite on :5173; proxies `/api` → http://localhost:8000 (**API must run on 8000**)
+- `bun run build` — `tsc -b && vite build` (run before declaring a change done)
+- `bun run lint` — oxlint (rules in `.oxlintrc.json`)
+- `bun run format` (prettier --write .) / `bun run format:check` — Prettier: `printWidth: 100`, semicolons, double quotes, trailing commas
+- `bun run test` — Vitest, pure unit tests only (see Tests)
+- Dependency changes: `bun add` (never npm) — `bun.lock` is the committed lockfile; `package-lock.json` is gitignored and only generated ad hoc by npm users
 
 ### Server (`cd server`, Python 3.14 via `uv`)
 - `uv sync` — install dependencies
@@ -35,9 +44,10 @@ for code changes — keep it current.
 - `uv run pytest` — needs a reachable Postgres (see Tests)
 
 ### Local data & full stack
-- `docker compose up db` — Postgres on :5432, creates `plannerr` + `plannerr_test`
+- `docker compose up db` — Postgres on 127.0.0.1:5432 (loopback-only host mapping for dev/tests), creates `plannerr` + `plannerr_test`
 - `docker compose up --build` — full stack at http://localhost:8080
   (Podman: `podman-compose up --build`; both engines read the same `compose.yml`)
+- The db publishes 5432 only on loopback: the compose `server` ignores it (internal network) but host uvicorn/pytest can reach it
 
 ## Layout
 
@@ -117,5 +127,5 @@ server/app/
 
 ## Definition of done
 
-Web change: `npm run format && npm run lint && npm run test && npm run build` all green, PWA build intact.
+Web change: `bun run format && bun run lint && bun run test && bun run build` (npm equivalents fine) all green, PWA build intact.
 Server change: `uv run pytest` green against a fresh migration.

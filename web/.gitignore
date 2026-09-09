@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# npm lockfile is legacy — bun.lock (committed) is the lockfile of record.
+# npm users still work: `npm install` derives an ignored package-lock.json.
+package-lock.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
