@@ -6,7 +6,9 @@ and optional LLM-written daily push summaries.
 
 Monorepo: `web/` (React SPA) + `server/` (FastAPI) + Postgres 18 in compose.
 Compose file is `compose.yml`; images are built from `web/Containerfile` and
-`server/Containerfile` (engine-neutral names — see README "Docker vs. Podman").
+`server/Containerfile` (engine-neutral names — see README "Docker vs. Podman");
+`compose.dev.yml` is a dev-only overlay that opens the db on `127.0.0.1:5432` for
+host-side dev/tests — a plain `docker compose up` (production) never publishes a db port.
 Product docs live in `README.md`; design/plan records in `plans/` (read the
 newest `*-approved.md` before large changes). This file is the working guide
 for code changes — keep it current.
@@ -45,10 +47,13 @@ npm (`PM=bun|npm` to force). Logs in `.dev-logs/`.
 - `scripts/refresh-server-deps.sh` — deliberate dep-update ritual: re-resolves within `pyproject.toml` ranges, syncs `.venv`, runs tests, shows the `uv.lock` diff. Both apps commit their lockfile and build images frozen; server ranges are unbounded `>=` (vs web's `^`) and it runs migrations on boot, so its ritual matters more
 
 ### Local data & full stack
-- `docker compose up db` — Postgres on 127.0.0.1:5432 (loopback-only host mapping for dev/tests), creates `plannerr` + `plannerr_test`
+- `docker compose up db` — Postgres, private to the compose network (prod posture: no host port)
+- `docker compose -f compose.yml -f compose.dev.yml up db` — the dev/tests variant:
+  publishes on 127.0.0.1:5432 (loopback only), creates `plannerr` + `plannerr_test`
 - `docker compose up --build` — full stack at http://localhost:8080
-  (Podman: `podman-compose up --build`; both engines read the same `compose.yml`)
-- The db publishes 5432 only on loopback: the compose `server` ignores it (internal network) but host uvicorn/pytest can reach it
+  (Podman: `podman-compose up --build`; same files — scripts/dev.sh adds the overlay for you)
+- Only the dev overlay publishes 5432, loopback only: the compose `server` ignores the mapping
+  and reaches the db via the internal network; host uvicorn/pytest need `compose.dev.yml`
 
 ## Layout
 
@@ -124,7 +129,7 @@ server/app/
 - **Web** — Vitest unit tests in `lib/` (dates, color contrast, progress snapping, item grouping, backup
   merge, push payload). No DOM/testing-library setup exists: keep logic extractable to `lib/` and verify
   UI/visual changes manually or via a headless browser.
-- **Server** — pytest + pytest-asyncio against `plannerr_test`; start the DB with `docker compose up db` (Podman: `podman-compose up db`).
+- **Server** — pytest + pytest-asyncio against `plannerr_test`; start the DB with `docker compose -f compose.yml -f compose.dev.yml up db` (Podman: `podman-compose -f compose.yml -f compose.dev.yml up db`).
 
 ## Definition of done
 

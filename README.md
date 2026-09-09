@@ -88,9 +88,24 @@ migrations apply before the API starts serving.
 #    Then set LLM_BASE_URL to any OpenAI-compatible endpoint (see below).
 ```
 
+### Postgres host access is dev-only
+
+`compose.yml` keeps the `db` service **private to the compose network** — a
+plain `docker compose up --build` (production) never opens a database port on
+the host, so it can't clash with a Postgres you already run. Host access on
+`127.0.0.1:5432` (for the host-side API, pytest, psql) is opt-in via the
+`compose.dev.yml` overlay:
+
+```bash
+docker compose -f compose.yml -f compose.dev.yml up -d db
+```
+
+`scripts/dev.sh` applies the overlay automatically when it starts the db, so
+day-to-day development needs nothing extra.
+
 ### Docker vs. Podman
 
-- One compose file, one pair of Containerfiles — nothing is engine-specific.
+- One compose file plus a dev-only overlay, one pair of Containerfiles — nothing is engine-specific.
 - The build-ignore files stay named `.dockerignore` on purpose: Docker reads
   only that name, and Podman reads it too, so it is the engine-neutral choice
   (a `.containerignore` rename would make `docker compose build` silently
@@ -135,8 +150,8 @@ Everything the script does is also runnable by hand, usually only when you're
 debugging one layer:
 
 ```bash
-# 1. Database (postgres:18, published on 127.0.0.1:5432 for host-side dev)
-podman-compose up db        # or: docker compose up db
+# 1. Database (postgres:18; the 127.0.0.1:5432 host publish is dev-only — compose.dev.yml)
+podman-compose -f compose.yml -f compose.dev.yml up db   # or: docker compose -f compose.yml -f compose.dev.yml up db
 
 # 2. Server — http://localhost:8000 (auto-reload)
 cd server
@@ -174,8 +189,9 @@ bun run dev                 # or: npm run dev
 ## Testing
 
 ```bash
-# Server (needs a Postgres; set TEST_DATABASE_URL or use the compose db,
-# which creates a `plannerr_test` database):
+# Server (needs a Postgres on :5432 — set TEST_DATABASE_URL, or start the compose
+# db with the dev overlay, which publishes :5432 and creates a `plannerr_test` database):
+#   docker compose -f compose.yml -f compose.dev.yml up db
 cd server && uv run pytest
 
 # Web (Vitest unit tests for date grouping, color contrast, progress snapping):
@@ -185,7 +201,8 @@ cd web && bun run test        # or: npm run test
 ## Project layout
 
 ```
-├── compose.yml            # web + server + db (Postgres 18)
+├── compose.yml            # web + server + db (Postgres 18); db is private to the network
+├── compose.dev.yml        # dev overlay: publishes the db on 127.0.0.1:5432 (host dev/tests)
 ├── .env.example
 ├── server/                # FastAPI + SQLAlchemy async (uv project)
 │   ├── Containerfile      # uv-based production image (Docker/Podman)

@@ -1,0 +1,19 @@
+# Plannerr — dev overlay: grants the HOST loopback access to the compose db.
+#
+# The base compose.yml keeps Postgres private inside the compose network — the
+# right default for production (no published database ports, nothing to clash
+# with a Postgres you already run). Local development and tests run the API and
+# pytest on the host, which need the db at 127.0.0.1:5432; this overlay adds
+# that publish back. It is only in effect when explicitly included:
+#
+#   docker compose -f compose.yml -f compose.dev.yml up -d db    # podman-compose works the same
+#   scripts/dev.sh                                               # applies this overlay automatically
+#
+# A plain `docker compose up` (production) never publishes the db port.
+
+services:
+  db:
+    ports:
+      # Loopback-only: reachable from the host (dev API, pytest, psql) but
+      # never on the LAN or from other compose networks.
+      - "127.0.0.1:5432:5432"

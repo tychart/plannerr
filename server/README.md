@@ -14,10 +14,11 @@ uv run uvicorn app.main:app --reload --port 8000
 
 ## Tests
 
-Needs a reachable Postgres. The suite runs against `plannerr_test`:
+Needs a reachable Postgres on :5432. The suite runs against `plannerr_test`. Use the
+dev overlay to publish the compose db to the host (a plain `up db` keeps it private):
 
 ```bash
-docker compose up db          # creates plannerr + plannerr_test
+docker compose -f compose.yml -f compose.dev.yml up db   # creates plannerr + plannerr_test
 uv run pytest
 ```
 

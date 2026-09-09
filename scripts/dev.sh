@@ -43,6 +43,8 @@
 #     local credentials (both are gitignored — safe for local dev only).
 #   * Keep .env (read by compose for the db) and server/.env (read by the
 #     local API) in sync if you change the DB password.
+#   * The db's host publish (:5432) is dev-only, from compose.dev.yml — this
+#     script applies it automatically (a plain compose up never opens the port).
 #   * Exported env vars override .env for the API (pydantic-settings). If the
 #     server can't reach the DB, check for stale exports: `unset DATABASE_URL`.
 #   * Logs live in .dev-logs/ (gitignored).
@@ -92,6 +94,11 @@ run_compose() { # word-split COMPOSE_CMD on purpose (may be "docker compose")
   $COMPOSE_CMD "$@"
 }
 
+# Compose runs for the db always merge in compose.dev.yml: base compose.yml
+# keeps Postgres private on the compose network (prod posture), and the dev
+# overlay adds the loopback :5432 publish that host-side uvicorn/pytest need.
+DB_COMPOSE_ARGS=(-f compose.yml -f compose.dev.yml)
+
 # --- helpers -----------------------------------------------------------------
 port_open() { # $1 port — true if something listens on loopback (IPv4 or IPv6).
   # Vite/uvicorn bind either ::1 or 127.0.0.1 depending on how localhost
@@ -134,13 +141,13 @@ start_db() {
     return 0
   fi
   detect_compose || die "no podman-compose / docker found — start Postgres yourself and export DEV_NO_DB=1"
-  info "starting database container: $COMPOSE_CMD up -d db"
-  run_compose up -d db
+  info "starting database container: $COMPOSE_CMD up -d db (with compose.dev.yml for the :5432 publish)"
+  run_compose "${DB_COMPOSE_ARGS[@]}" up -d db
   if wait_for_port 5432 20 "database"; then return 0; fi
-  # A pre-existing container (e.g. from before compose.yml published :5432)
-  # won't be reconfigured by a plain `up -d` — recreate it once.
+  # An existing container created before the port mapping existed won't be
+  # reconfigured by a plain `up -d` — recreate it once.
   info "db container not publishing :5432 — recreating it to apply the port mapping"
-  run_compose up -d --force-recreate db
+  run_compose "${DB_COMPOSE_ARGS[@]}" up -d --force-recreate db
   wait_for_port 5432 45 "database" || die "database container is up but :5432 is unreachable"
 }
 
@@ -437,7 +444,7 @@ down() {
   stop_dev
   if detect_compose; then
     info "stopping the database container: $COMPOSE_CMD down"
-    run_compose down || warn "compose down failed (was the db running?)"
+    run_compose "${DB_COMPOSE_ARGS[@]}" down || warn "compose down failed (was the db running?)"
     info "done — data stays in the pgdata volume for next time."
   fi
 }
