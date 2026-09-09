@@ -59,8 +59,11 @@ plus optional AI-written daily push summaries.
 
 ## Quick start
 
-The same `docker-compose.yml` and Dockerfiles run under **Docker** or
-**Podman** (both implement the OCI spec; no engine-specific code or files).
+The same `compose.yml` and two `Containerfile`s run under **Docker** or
+**Podman** — both implement the OCI spec, and `compose.yml` / `Containerfile`
+are the neutral file names both engines accept (Docker Compose v2 and
+`podman-compose` auto-detect `compose.yml`; the compose `build:` blocks name
+the `Containerfile` explicitly so Docker Compose finds it too).
 
 ```bash
 cp .env.example .env
@@ -87,11 +90,20 @@ migrations apply before the API starts serving.
 
 ### Docker vs. Podman
 
-- One compose file, one pair of Dockerfiles — nothing is engine-specific.
+- One compose file, one pair of Containerfiles — nothing is engine-specific.
+- The build-ignore files stay named `.dockerignore` on purpose: Docker reads
+  only that name, and Podman reads it too, so it is the engine-neutral choice
+  (a `.containerignore` rename would make `docker compose build` silently
+  include `node_modules`/`.venv` in build contexts).
+- Engine-neutral names: `compose.yml` at the repo root and a `Containerfile`
+  in each of `web/` and `server/`. Podman's tooling prefers these names and
+  Docker Compose v2 reads them too. Building a service directly (outside
+  compose): `podman build ./web` just works; with Docker run
+  `docker build -f web/Containerfile ./web`.
 - On Fedora, `podman-compose` (already installed) is the zero-install path.
-  For exact `docker compose` feature parity, you can instead install
-  `docker-compose` and run `podman compose up --build` — it drives the real
-  Docker Compose against Podman's Docker-compatible API socket.
+  For exact `docker compose` feature parity, you can instead install the
+  Docker Compose v2 binary and run `podman compose up --build` — it drives
+  real Docker Compose against Podman's Docker-compatible API socket.
 - Podman runs rootless here (no sudo, no daemon), so bind ports must be
   `>= 1024` (`WEB_PORT=8080` already is).
 
@@ -152,13 +164,17 @@ cd web && npm run test
 ## Project layout
 
 ```
-├── docker-compose.yml     # web + server + db (Postgres 18)
+├── compose.yml            # web + server + db (Postgres 18)
 ├── .env.example
 ├── server/                # FastAPI + SQLAlchemy async (uv project)
+│   ├── Containerfile      # uv-based production image (Docker/Podman)
+│   ├── entrypoint.sh      # alembic upgrade head, then exec uvicorn
 │   ├── app/               # config, db, models (items/classes/users), routers
 │   ├── alembic/           # async migrations
 │   └── tests/             # pytest (auth, classes, items, notifications)
 └── web/                   # React + TS + Vite + Tailwind v4
+    ├── Containerfile      # multi-stage: node build → nginx
+    ├── nginx.conf         # SPA fallback + /api reverse proxy
     └── src/
         ├── lib/           # api client, types, items, dates, color, progress, push, backup
         ├── components/    # app shell + mobile menu; shared ui primitives (Button, Modal, …)

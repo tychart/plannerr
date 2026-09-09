@@ -21,7 +21,7 @@ RUN uv sync --frozen --no-dev
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
-COPY docker-entrypoint.sh /usr/local/bin/plannerr-server-entrypoint
+COPY entrypoint.sh /usr/local/bin/plannerr-server-entrypoint
 RUN chmod +x /usr/local/bin/plannerr-server-entrypoint
 
 EXPOSE 8000

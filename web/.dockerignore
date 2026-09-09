@@ -1,5 +1,8 @@
+# Read by Docker AND Podman builds. Keep this filename — Docker ignores
+# .containerignore, so renaming this file would break `docker compose build`.
 node_modules
 dist
 coverage
 Dockerfile
+Containerfile
 .dockerignore

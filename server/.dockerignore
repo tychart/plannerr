@@ -1,3 +1,5 @@
+# Read by Docker AND Podman builds. Keep this filename — Docker ignores
+# .containerignore, so renaming this file would break `docker compose build`.
 .venv
 __pycache__
 *.py[cod]
@@ -5,4 +7,5 @@ __pycache__
 tests
 .env
 Dockerfile
+Containerfile
 .dockerignore

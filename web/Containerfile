@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+# Plannerr web app — multi-stage: build with Node, serve with nginx.
+FROM node:26-alpine AS build
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+# The stock nginx image symlinks its logs to /dev/std{out,err}. Under rootless
+# Podman a container process can't re-open those, so nginx would exit with
+# "Permission denied". Removing the symlinks makes nginx log to plain files
+# under /var/log/nginx (view with: podman exec plannerr-web-1 tail …/access.log).
+RUN rm -f /var/log/nginx/access.log /var/log/nginx/error.log
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80

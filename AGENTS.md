@@ -5,6 +5,8 @@ Self-hostable schoolwork planner: track assignments, quizzes & exams per class
 and optional LLM-written daily push summaries.
 
 Monorepo: `web/` (React SPA) + `server/` (FastAPI) + Postgres 18 in compose.
+Compose file is `compose.yml`; images are built from `web/Containerfile` and
+`server/Containerfile` (engine-neutral names — see README "Docker vs. Podman").
 Product docs live in `README.md`; design/plan records in `plans/` (read the
 newest `*-approved.md` before large changes). This file is the working guide
 for code changes — keep it current.
@@ -34,7 +36,8 @@ for code changes — keep it current.
 
 ### Local data & full stack
 - `docker compose up db` — Postgres on :5432, creates `plannerr` + `plannerr_test`
-- `docker compose up --build` (or `podman compose`) — full stack at http://localhost:8080
+- `docker compose up --build` — full stack at http://localhost:8080
+  (Podman: `podman-compose up --build`; both engines read the same `compose.yml`)
 
 ## Layout
 
@@ -110,7 +113,7 @@ server/app/
 - **Web** — Vitest unit tests in `lib/` (dates, color contrast, progress snapping, item grouping, backup
   merge, push payload). No DOM/testing-library setup exists: keep logic extractable to `lib/` and verify
   UI/visual changes manually or via a headless browser.
-- **Server** — pytest + pytest-asyncio against `plannerr_test`; start the DB with `docker compose up db`.
+- **Server** — pytest + pytest-asyncio against `plannerr_test`; start the DB with `docker compose up db` (Podman: `podman-compose up db`).
 
 ## Definition of done
 

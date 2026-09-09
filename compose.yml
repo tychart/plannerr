@@ -17,7 +17,9 @@ services:
       retries: 10
 
   server:
-    build: ./server
+    build:
+      context: ./server
+      dockerfile: Containerfile # explicit so Docker Compose (no Containerfile fallback) finds it
     env_file: .env
     environment:
       # Point at the db service regardless of what .env says for local dev.
@@ -41,7 +43,9 @@ services:
     stop_grace_period: 30s
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      dockerfile: Containerfile # explicit so Docker Compose (no Containerfile fallback) finds it
     ports:
       - "${WEB_PORT:-8080}:80"
     depends_on:
