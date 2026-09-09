@@ -62,9 +62,11 @@ export function ItemForm({
   const isAssignment = kind === "assignment";
 
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [classId, setClassId] = useState(
-    initial?.class.id ?? defaultClassId ?? classes?.[0]?.id ?? "",
-  );
+  // Intentionally no default class in create mode: the user must pick one, or
+  // an item could silently land in a class they never chose. Only an edited
+  // item (initial) or an explicit quick-add default (e.g. "create & add
+  // another", which carries the previous item's class) pre-fills this field.
+  const [classId, setClassId] = useState(initial?.class.id ?? defaultClassId ?? "");
   const parts = initial ? partsFromDueAt(initial.due_at) : null;
   const [dueDate, setDueDate] = useState(
     parts?.date ?? defaultDueDate ?? format(new Date(), "yyyy-MM-dd"),
@@ -111,11 +113,14 @@ export function ItemForm({
     return errors;
   }
 
-  // Errors are derived from the current values on every render, so after the
-  // first submit attempt every missing field is reported at once — and each
-  // message disappears the moment its field becomes valid, with no stale text.
-  const fieldErrors: FieldErrors = attempted ? validateFields() : {};
-  const hasErrors = REQUIRED_FIELDS.some((field) => fieldErrors[field] !== undefined);
+  // Current validity is always derived from the live values; the UI only
+  // *shows* messages after the first submit attempt, so a fresh form doesn't
+  // nag while typing. Gating uses the always-derived errors, so an invalid
+  // form can never reach onSubmit — validation is a hard gate, not a
+  // suggestion — and the first failed submit focuses the right field too.
+  const currentErrors = validateFields();
+  const fieldErrors: FieldErrors = attempted ? currentErrors : {};
+  const hasErrors = REQUIRED_FIELDS.some((field) => currentErrors[field] !== undefined);
 
   // The date input may carry either its error or the greyed "default date"
   // note; combine the ids so assistive tech hears whichever is current.
@@ -125,7 +130,7 @@ export function ItemForm({
       .join(" ") || undefined;
 
   function focusFirstInvalid() {
-    const first = REQUIRED_FIELDS.find((field) => fieldErrors[field]);
+    const first = REQUIRED_FIELDS.find((field) => currentErrors[field]);
     if (!first) return;
     if (first === "title") titleRef.current?.focus();
     else if (first === "class") classRef.current?.focus();
