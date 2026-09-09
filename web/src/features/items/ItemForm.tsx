@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { format } from "date-fns";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
@@ -7,6 +7,7 @@ import { Select } from "../../components/ui/Select";
 import { Switch } from "../../components/ui/Switch";
 import type { ItemFormValues, LinkDraft } from "../../lib/items";
 import { KIND_DUE_LABELS, KIND_TITLE_LABELS, partsFromDueAt } from "../../lib/items";
+import { cn } from "../../lib/cn";
 import type { Item, ItemKind } from "../../lib/types";
 import { useClasses } from "../classes/useClasses";
 import { LinksEditor } from "./ItemLinks";
@@ -16,6 +17,15 @@ import { ProgressSlider } from "./ProgressSlider";
 
 export type SubmitAction =
   "close" | "open" | "another-class" | "another-date" | "another-date-time";
+
+/** Required form fields, in the order they appear — extend this list (and
+ *  validateFields below) when a new required field is introduced. */
+type RequiredField = "title" | "class" | "due";
+
+/** Inline validation errors keyed by field; missing = the field is valid. */
+type FieldErrors = Partial<Record<RequiredField, string>>;
+
+const REQUIRED_FIELDS: readonly RequiredField[] = ["title", "class", "due"];
 
 interface ItemFormProps {
   kind: ItemKind;
@@ -73,7 +83,9 @@ export function ItemForm({
   const [links, setLinks] = useState<LinkDraft[]>(
     initial?.links.map((l) => ({ url: l.url, label: l.label ?? "" })) ?? [],
   );
-  const [validationError, setValidationError] = useState<string | null>(null);
+  // Field errors only appear after the first submit attempt, so a fresh form
+  // doesn't nag while the user is still typing.
+  const [attempted, setAttempted] = useState(false);
 
   const values = (): ItemFormValues => ({
     kind,
@@ -87,25 +99,45 @@ export function ItemForm({
     links,
   });
 
-  function validate(): boolean {
-    if (!title.trim()) {
-      setValidationError(isAssignment ? "Title is required." : "Name is required.");
-      return false;
-    }
-    if (!classId) {
-      setValidationError("Pick a class.");
-      return false;
-    }
-    if (!dueDate) {
-      setValidationError("Pick a date.");
-      return false;
-    }
-    setValidationError(null);
-    return true;
+  const titleRef = useRef<HTMLInputElement>(null);
+  const classRef = useRef<HTMLSelectElement>(null);
+  const dueRef = useRef<HTMLInputElement>(null);
+
+  function validateFields(): FieldErrors {
+    const errors: FieldErrors = {};
+    if (!title.trim()) errors.title = `${KIND_TITLE_LABELS[kind]} is required.`;
+    if (!classId) errors.class = "Pick a class.";
+    if (!dueDate) errors.due = "Pick a date.";
+    return errors;
+  }
+
+  // Errors are derived from the current values on every render, so after the
+  // first submit attempt every missing field is reported at once — and each
+  // message disappears the moment its field becomes valid, with no stale text.
+  const fieldErrors: FieldErrors = attempted ? validateFields() : {};
+  const hasErrors = REQUIRED_FIELDS.some((field) => fieldErrors[field] !== undefined);
+
+  // The date input may carry either its error or the greyed "default date"
+  // note; combine the ids so assistive tech hears whichever is current.
+  const dueDescribedBy =
+    [fieldErrors.due ? "item-date-error" : null, dueIsDefault ? "due-default-hint" : null]
+      .filter((id): id is string => id !== null)
+      .join(" ") || undefined;
+
+  function focusFirstInvalid() {
+    const first = REQUIRED_FIELDS.find((field) => fieldErrors[field]);
+    if (!first) return;
+    if (first === "title") titleRef.current?.focus();
+    else if (first === "class") classRef.current?.focus();
+    else dueRef.current?.focus();
   }
 
   function submit(action: SubmitAction) {
-    if (!validate()) return;
+    setAttempted(true);
+    if (hasErrors) {
+      focusFirstInvalid();
+      return;
+    }
     return onSubmit(values(), action);
   }
 
@@ -116,18 +148,35 @@ export function ItemForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <Field label={KIND_TITLE_LABELS[kind]} htmlFor="item-title">
+      <Field
+        label={KIND_TITLE_LABELS[kind]}
+        htmlFor="item-title"
+        required
+        error={fieldErrors.title}
+      >
         <Input
           id="item-title"
+          ref={titleRef}
           value={title}
+          aria-invalid={fieldErrors.title ? true : undefined}
+          aria-describedby={fieldErrors.title ? "item-title-error" : undefined}
+          className={cn(fieldErrors.title && "border-danger focus-visible:ring-danger/60")}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={isAssignment ? "e.g. Problem set 3" : "e.g. Chapter 4 quiz"}
           maxLength={200}
         />
       </Field>
 
-      <Field label="Class" htmlFor="item-class">
-        <Select id="item-class" value={classId} onChange={(e) => setClassId(e.target.value)}>
+      <Field label="Class" htmlFor="item-class" required error={fieldErrors.class}>
+        <Select
+          id="item-class"
+          ref={classRef}
+          value={classId}
+          aria-invalid={fieldErrors.class ? true : undefined}
+          aria-describedby={fieldErrors.class ? "item-class-error" : undefined}
+          className={cn(fieldErrors.class && "border-danger focus-visible:ring-danger/60")}
+          onChange={(e) => setClassId(e.target.value)}
+        >
           <option value="" disabled>
             Select a class…
           </option>
@@ -140,13 +189,18 @@ export function ItemForm({
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label={KIND_DUE_LABELS[kind]} htmlFor="item-date">
+        <Field label={KIND_DUE_LABELS[kind]} htmlFor="item-date" required error={fieldErrors.due}>
           <Input
             id="item-date"
+            ref={dueRef}
             type="date"
             value={dueDate}
-            aria-describedby={dueIsDefault ? "due-default-hint" : undefined}
-            className={dueIsDefault ? "opacity-60" : undefined}
+            aria-invalid={fieldErrors.due ? true : undefined}
+            aria-describedby={dueDescribedBy}
+            className={cn(
+              dueIsDefault && "opacity-60",
+              fieldErrors.due && "border-danger focus-visible:ring-danger/60",
+            )}
             onChange={(e) => {
               setDueDate(e.target.value);
               setDueTouched(true);
@@ -159,7 +213,7 @@ export function ItemForm({
             type="time"
             value={dueTime}
             aria-describedby={dueIsDefault ? "due-default-hint" : undefined}
-            className={dueIsDefault ? "opacity-60" : undefined}
+            className={cn(dueIsDefault && "opacity-60")}
             onChange={(e) => {
               setDueTime(e.target.value);
               setDueTouched(true);
@@ -201,9 +255,12 @@ export function ItemForm({
         <LinksEditor links={links} onChange={setLinks} />
       </Field>
 
-      {(validationError || error) && (
-        <p className="text-sm text-danger">{validationError ?? error}</p>
+      {error && (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
       )}
+      <p className="text-xs text-muted">Fields marked with * are required.</p>
 
       <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
         {mode === "edit" && onCancel && (
