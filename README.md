@@ -293,6 +293,12 @@ number and reason while the rest import.
 
 ## Deployment notes
 
+- Web dependencies auto-update within the `^` ranges in `package.json` at
+  image build time (no committed lockfile). A plain rebuild reuses the cached
+  `bun install` layer, so to genuinely refresh them run
+  `podman-compose build --pull=newer --no-cache web` (docker:
+  `docker compose build --no-cache web`).
+
 - Everything behind one host port: `web` (nginx) serves the built SPA and
   reverse-proxies `/api/*` to `server`, so the app is same-origin (no CORS,
   cookies "just work").

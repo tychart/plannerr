@@ -35,7 +35,7 @@ npm (`PM=bun|npm` to force). Logs in `.dev-logs/`.
 - `bun run lint` — oxlint (rules in `.oxlintrc.json`)
 - `bun run format` (prettier --write .) / `bun run format:check` — Prettier: `printWidth: 100`, semicolons, double quotes, trailing commas
 - `bun run test` — Vitest, pure unit tests only (see Tests)
-- Dependency changes: `bun add` (never npm) — `bun.lock` is the committed lockfile; `package-lock.json` is gitignored and only generated ad hoc by npm users
+- Dependency changes: edit `package.json` ranges, or just let them ride — **no lockfile is committed** (deps auto-update within `^` ranges at image build time). Refresh an image's deps deliberately with `podman-compose build --pull=newer --no-cache web` (docker: `docker compose build --no-cache web`) — a plain rebuild reuses the cached `bun install` layer. `bun.lock`/`package-lock.json` are gitignored and disposable
 
 ### Server (`cd server`, Python 3.14 via `uv`)
 - `uv sync` — install dependencies

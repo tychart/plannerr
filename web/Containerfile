@@ -1,13 +1,16 @@
 # syntax=docker/dockerfile:1
 # Plannerr web app — multi-stage: build with Bun, serve with nginx.
-# bun is the primary package manager: bun.lock is the lockfile of record
-# (keep it committed; never add package-lock.json back). `bun run build` runs
-# the same `tsc -b && vite build` script npm users get locally.
+# Dependency policy: auto-update at build. bun.lock is disposable and never
+# committed nor copied into the image (see web/.dockerignore); each build
+# resolves the newest packages matching the ^ ranges in package.json.
+# To force a true refresh (bypass layer cache + refresh the base image):
+#   podman-compose build --pull=newer --no-cache web
+# (docker: docker compose build --no-cache web)
 FROM docker.io/oven/bun:1-alpine AS build
 WORKDIR /app
 
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+COPY package.json ./
+RUN bun install
 
 COPY . .
 RUN bun run build
