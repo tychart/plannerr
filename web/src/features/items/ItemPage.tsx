@@ -4,7 +4,7 @@ import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { Spinner } from "../../components/ui/Spinner";
 import { KIND_LABELS, KIND_PLURAL_LABELS, kindRoute } from "../../lib/items";
-import { ItemDetails } from "./ItemDetails";
+import { ItemDetailView } from "./ItemDetailView";
 import { ItemDialog } from "./ItemDialog";
 import { useDeleteItem, useItem } from "./useItems";
 
@@ -51,7 +51,7 @@ export function ItemPage() {
   const kindLabel = KIND_LABELS[item.kind];
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           to={`/${kindRoute(item.kind)}`}
@@ -59,9 +59,11 @@ export function ItemPage() {
         >
           <ArrowLeft className="h-4 w-4" /> Back to {KIND_PLURAL_LABELS[item.kind].toLowerCase()}
         </Link>
-        <div className="flex items-center gap-2">
+        {/* On phones the edit/delete actions live here; from md+ they move into
+            the sticky rail rendered by ItemDetailView. */}
+        <div className="flex items-center gap-2 md:hidden">
           <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} disabled={busy}>
-            <Pencil className="h-4 w-4" /> Edit
+            <Pencil className="h-4 w-4" aria-hidden /> Edit
           </Button>
           <Button
             variant="ghost"
@@ -70,12 +72,17 @@ export function ItemPage() {
             disabled={busy}
             aria-label={`Delete ${kindLabel.toLowerCase()}`}
           >
-            <Trash2 className="h-4 w-4 text-danger" />
+            <Trash2 className="h-4 w-4 text-danger" aria-hidden />
           </Button>
         </div>
       </div>
 
-      <ItemDetails item={item} />
+      <ItemDetailView
+        item={item}
+        busy={busy}
+        onEdit={() => setEditOpen(true)}
+        onDelete={() => void handleDelete()}
+      />
       <ItemDialog open={editOpen} onOpenChange={setEditOpen} initial={item} kind={item.kind} />
     </div>
   );

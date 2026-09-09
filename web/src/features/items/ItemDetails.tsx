@@ -1,14 +1,13 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { CalendarDays, CheckCircle2, Clock, ExternalLink, Flag } from "lucide-react";
-import { ClassBadge } from "../../components/ClassBadge";
+import { CalendarDays, CheckCircle2, Clock, ExternalLink } from "lucide-react";
 import { Button } from "../../components/ui/Button";
-import { KIND_LABELS, itemDueLabel, kindRoute } from "../../lib/items";
+import { itemDueLabel, kindRoute } from "../../lib/items";
 import type { Item } from "../../lib/types";
+import { ItemChips } from "./ItemChips";
 import { LinksView } from "./ItemLinks";
 import { NotesView } from "./NotesView";
 import { ProgressSlider } from "./ProgressSlider";
-import { useUpdateItem } from "./useItems";
+import { useItemProgress } from "./useItemProgress";
 
 interface ItemDetailsProps {
   item: Item;
@@ -18,21 +17,8 @@ interface ItemDetailsProps {
 
 /** Read-only item view shared by the view popup and full detail routes. */
 export function ItemDetails({ item, onEdit, showOpenLink = false }: ItemDetailsProps) {
-  const kindLabel = KIND_LABELS[item.kind];
   const isAssignment = item.kind === "assignment";
-  const updateItem = useUpdateItem();
-  const [progress, setProgress] = useState(item.progress ?? 0);
-
-  useEffect(() => {
-    setProgress(item.progress ?? 0);
-  }, [item.progress]);
-
-  function commitProgress(value: number) {
-    setProgress(value);
-    void updateItem.mutateAsync({ id: item.id, progress: value });
-  }
-
-  const complete = progress === 100;
+  const { progress, commit, complete, isPending } = useItemProgress(item);
 
   return (
     <article className="space-y-5">
@@ -40,16 +26,7 @@ export function ItemDetails({ item, onEdit, showOpenLink = false }: ItemDetailsP
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-primary-soft px-2.5 py-1 text-xs font-medium text-primary">
-                {kindLabel}
-              </span>
-              <ClassBadge name={item.class.name} color={item.class.color} />
-              {item.is_priority && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-foreground">
-                  <Flag className="h-3.5 w-3.5 fill-warning text-warning" aria-hidden />
-                  Priority
-                </span>
-              )}
+              <ItemChips item={item} />
             </div>
             <h1 className="text-balance text-2xl font-semibold text-foreground">{item.title}</h1>
           </div>
@@ -98,11 +75,7 @@ export function ItemDetails({ item, onEdit, showOpenLink = false }: ItemDetailsP
                 )}
               </div>
               <div className="mt-2">
-                <ProgressSlider
-                  value={progress}
-                  onCommit={commitProgress}
-                  disabled={updateItem.isPending}
-                />
+                <ProgressSlider value={progress} onCommit={commit} disabled={isPending} />
               </div>
             </div>
           )}
