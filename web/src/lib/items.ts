@@ -19,6 +19,14 @@ export interface LinkDraft {
   label: string;
 }
 
+/** Defaults that seed a brand-new item form: the quick-add dialog's
+ *  "create & add another" actions and pre-chosen class/date entry points. */
+export interface ItemFormDefaults {
+  classId?: string;
+  dueDate?: string; // yyyy-MM-dd (local)
+  dueTime?: string; // "HH:mm" or "" for all-day
+}
+
 /** Values collected by the shared item form (dialog + detail page). */
 export interface ItemFormValues {
   kind: ItemKind;

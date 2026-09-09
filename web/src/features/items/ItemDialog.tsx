@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Modal } from "../../components/ui/Modal";
-import type { ItemFormValues } from "../../lib/items";
+import type { ItemFormDefaults, ItemFormValues } from "../../lib/items";
 import { KIND_LABELS, kindRoute, valuesToInput } from "../../lib/items";
 import type { Item, ItemKind } from "../../lib/types";
 import type { SubmitAction } from "./ItemForm";
@@ -16,7 +16,7 @@ interface ItemDialogProps {
   /** Kind preset for quick-add (used by Home/library "+ New"). */
   kind?: ItemKind;
   /** Quick-add defaults (used after choosing a class/date). */
-  defaults?: { classId?: string; dueDate?: string };
+  defaults?: ItemFormDefaults;
 }
 
 /** Modal for quick-add and quick-edit, shared by Home and the library pages. */
@@ -28,7 +28,7 @@ export function ItemDialog({ open, onOpenChange, initial, kind, defaults }: Item
   const activeKind: ItemKind = initial?.kind ?? kind ?? "assignment";
 
   const [formKey, setFormKey] = useState(0);
-  const [quickDefaults, setQuickDefaults] = useState<{ classId?: string; dueDate?: string }>({});
+  const [quickDefaults, setQuickDefaults] = useState<ItemFormDefaults>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,6 +62,13 @@ export function ItemDialog({ open, onOpenChange, initial, kind, defaults }: Item
       } else if (action === "another-date") {
         setQuickDefaults({ classId: values.class_id, dueDate: values.due_date });
         setFormKey((k) => k + 1);
+      } else if (action === "another-date-time") {
+        setQuickDefaults({
+          classId: values.class_id,
+          dueDate: values.due_date,
+          dueTime: values.due_time,
+        });
+        setFormKey((k) => k + 1);
       } else {
         onOpenChange(false);
       }
@@ -85,6 +92,7 @@ export function ItemDialog({ open, onOpenChange, initial, kind, defaults }: Item
         initial={initial}
         defaultClassId={defaults?.classId ?? quickDefaults.classId}
         defaultDueDate={defaults?.dueDate ?? quickDefaults.dueDate}
+        defaultDueTime={defaults?.dueTime ?? quickDefaults.dueTime}
         busy={busy}
         error={error}
         onSubmit={handleSubmit}

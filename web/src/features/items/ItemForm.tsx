@@ -14,7 +14,8 @@ import { NotesEditor } from "./NotesEditor";
 import { NotesView } from "./NotesView";
 import { ProgressSlider } from "./ProgressSlider";
 
-export type SubmitAction = "close" | "open" | "another-class" | "another-date";
+export type SubmitAction =
+  "close" | "open" | "another-class" | "another-date" | "another-date-time";
 
 interface ItemFormProps {
   kind: ItemKind;
@@ -22,6 +23,7 @@ interface ItemFormProps {
   initial?: Item | null;
   defaultClassId?: string;
   defaultDueDate?: string;
+  defaultDueTime?: string;
   busy?: boolean;
   error?: string | null;
   /** Show a live rendered preview under the notes editor. */
@@ -39,6 +41,7 @@ export function ItemForm({
   initial,
   defaultClassId,
   defaultDueDate,
+  defaultDueTime,
   busy = false,
   error = null,
   showNotesPreview = false,
@@ -56,7 +59,14 @@ export function ItemForm({
   const [dueDate, setDueDate] = useState(
     parts?.date ?? defaultDueDate ?? format(new Date(), "yyyy-MM-dd"),
   );
-  const [dueTime, setDueTime] = useState(parts?.time ?? "");
+  const [dueTime, setDueTime] = useState(parts?.time ?? defaultDueTime ?? "");
+  const [dueTouched, setDueTouched] = useState(false);
+
+  // In create mode the date/time shown is a default — today's date, or a
+  // date carried over by an "add another" action — until the user edits it.
+  // While untouched it renders greyed out so an item can't silently save with
+  // a date the user never chose for it.
+  const dueIsDefault = mode === "create" && !dueTouched;
   const [progress, setProgress] = useState(initial?.progress ?? 0);
   const [isPriority, setIsPriority] = useState(initial?.is_priority ?? false);
   const [notes, setNotes] = useState(initial?.notes ?? "");
@@ -135,7 +145,12 @@ export function ItemForm({
             id="item-date"
             type="date"
             value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
+            aria-describedby={dueIsDefault ? "due-default-hint" : undefined}
+            className={dueIsDefault ? "opacity-60" : undefined}
+            onChange={(e) => {
+              setDueDate(e.target.value);
+              setDueTouched(true);
+            }}
           />
         </Field>
         <Field label={`${KIND_DUE_LABELS[kind]} time (optional)`} htmlFor="item-time">
@@ -143,10 +158,21 @@ export function ItemForm({
             id="item-time"
             type="time"
             value={dueTime}
-            onChange={(e) => setDueTime(e.target.value)}
+            aria-describedby={dueIsDefault ? "due-default-hint" : undefined}
+            className={dueIsDefault ? "opacity-60" : undefined}
+            onChange={(e) => {
+              setDueTime(e.target.value);
+              setDueTouched(true);
+            }}
           />
         </Field>
       </div>
+      {dueIsDefault && (
+        <p id="due-default-hint" className="text-xs text-muted">
+          This {KIND_DUE_LABELS[kind].toLowerCase()} is just the default — it hasn't been set for
+          this item yet. Change it before saving if it isn't right.
+        </p>
+      )}
 
       {isAssignment && (
         <Field label={`Progress — ${progress}%`}>
@@ -209,6 +235,15 @@ export function ItemForm({
             onClick={() => void submit("another-date")}
           >
             Create & add another (same date)
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            disabled={busy}
+            onClick={() => void submit("another-date-time")}
+          >
+            Create & add another (same class & date/time)
           </Button>
           <Button
             variant="secondary"
