@@ -293,19 +293,21 @@ number and reason while the rest import.
 
 ## Deployment notes
 
-- Web dependencies auto-update within the `^` ranges in `package.json` at
-  image build time (no committed lockfile). A plain rebuild reuses the cached
-  `bun install` layer, so to genuinely refresh them run
-  `podman-compose build --pull=newer --no-cache web` (docker:
-  `docker compose build --no-cache web`).
-- Server dependencies are the opposite: `uv.lock` is committed and the image
-  builds it frozen (`uv sync --frozen`). Refresh deliberately with
-  `scripts/refresh-server-deps.sh` — it re-resolves within `pyproject.toml`
-  ranges, runs tests, and shows the diff; commit the lock, then a plain
-  `podman-compose build server` re-runs the install layer (the lock is a build
-  input, so no `--no-cache` needed). Server ranges are unbounded `>=`, so this
-  is what stops majors from silently jumping on a rebuild.
+Dependencies on **both** sides are locked and built frozen in their images
+(`bun.lock` / `uv.lock`, committed), and update deliberately through one
+command each — refresh, review the lockfile diff, commit, rebuild:
 
+- Web: `scripts/refresh-web-deps.sh` (resolves within the `^` ranges in
+  `package.json`, runs Vitest). Commit `web/bun.lock`, then a plain
+  `podman-compose build web` re-runs the install layer (the lock is a COPY
+  input, so no `--no-cache` needed).
+- Server: `scripts/refresh-server-deps.sh` (resolves within `pyproject.toml`
+  ranges, runs pytest). Commit `server/uv.lock`, then `podman-compose build
+  server`. Server ranges are unbounded `>=` (web's `^` cap majors), so the
+  server ritual is the one that must not be skipped.
+
+Base images stay floating (`oven/bun`, `nginx`, the `uv` image) — the
+*toolchains* auto-update on `--pull` rebuilds; only dependencies are frozen.
 - Everything behind one host port: `web` (nginx) serves the built SPA and
   reverse-proxies `/api/*` to `server`, so the app is same-origin (no CORS,
   cookies "just work").

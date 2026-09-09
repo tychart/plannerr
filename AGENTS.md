@@ -35,14 +35,14 @@ npm (`PM=bun|npm` to force). Logs in `.dev-logs/`.
 - `bun run lint` — oxlint (rules in `.oxlintrc.json`)
 - `bun run format` (prettier --write .) / `bun run format:check` — Prettier: `printWidth: 100`, semicolons, double quotes, trailing commas
 - `bun run test` — Vitest, pure unit tests only (see Tests)
-- Dependency changes: edit `package.json` ranges, or just let them ride — **no lockfile is committed** (deps auto-update within `^` ranges at image build time). Refresh an image's deps deliberately with `podman-compose build --pull=newer --no-cache web` (docker: `docker compose build --no-cache web`) — a plain rebuild reuses the cached `bun install` layer. `bun.lock`/`package-lock.json` are gitignored and disposable
+- Dependency changes: `bun add <pkg>` to add (updates package.json + bun.lock) or `scripts/refresh-web-deps.sh` to refresh everything within the `^` ranges — review the `bun.lock` diff, commit. `bun.lock` is the committed lockfile (image builds it frozen); `package-lock.json` is gitignored (npm fallback only)
 
 ### Server (`cd server`, Python 3.14 via `uv`)
 - `uv sync` — install dependencies
 - `uv run alembic upgrade head` — apply migrations (server also does this on boot in compose)
 - `uv run uvicorn app.main:app --reload --port 8000` — API for local web dev
 - `uv run pytest` — needs a reachable Postgres (see Tests)
-- `scripts/refresh-server-deps.sh` — deliberate dep-update ritual: re-resolves within `pyproject.toml` ranges, syncs `.venv`, runs tests, shows the `uv.lock` diff. `uv.lock` stays committed + frozen in the image (unlike the web app — server ranges are unbounded `>=` and it runs migrations on boot)
+- `scripts/refresh-server-deps.sh` — deliberate dep-update ritual: re-resolves within `pyproject.toml` ranges, syncs `.venv`, runs tests, shows the `uv.lock` diff. Both apps commit their lockfile and build images frozen; server ranges are unbounded `>=` (vs web's `^`) and it runs migrations on boot, so its ritual matters more
 
 ### Local data & full stack
 - `docker compose up db` — Postgres on 127.0.0.1:5432 (loopback-only host mapping for dev/tests), creates `plannerr` + `plannerr_test`

@@ -12,13 +12,10 @@ dist
 dist-ssr
 *.local
 
-# npm lockfile is legacy — the repo auto-updates deps at image build time
-# (see Containerfile), so no npm lock is committed either.
+# npm lockfile is legacy — bun is the primary package manager and bun.lock
+# (committed) is the lockfile of record. npm users still work: `npm install`
+# derives an ignored package-lock.json from package.json.
 package-lock.json
-# bun.lock is disposable: generated locally on every `bun install`, never
-# committed, never copied into the image. Range updates are tracked by the ^
-# bounds in package.json.
-bun.lock
 
 # Editor directories and files
 .vscode/*

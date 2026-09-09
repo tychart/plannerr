@@ -6,7 +6,3 @@ coverage
 Dockerfile
 Containerfile
 .dockerignore
-# Keep bun.lock out of the image: deps auto-update within package.json ranges
-# on every no-cache build (see Containerfile). A stale lockfile here would
-# silently pin the build to old versions.
-bun.lock

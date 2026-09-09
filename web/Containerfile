@@ -1,16 +1,15 @@
 # syntax=docker/dockerfile:1
 # Plannerr web app — multi-stage: build with Bun, serve with nginx.
-# Dependency policy: auto-update at build. bun.lock is disposable and never
-# committed nor copied into the image (see web/.dockerignore); each build
-# resolves the newest packages matching the ^ ranges in package.json.
-# To force a true refresh (bypass layer cache + refresh the base image):
-#   podman-compose build --pull=newer --no-cache web
-# (docker: docker compose build --no-cache web)
+# Dependency policy: bun.lock is committed and the image installs it frozen,
+# so production builds are reproducible. Update deliberately with
+# `scripts/refresh-web-deps.sh` (re-resolves within package.json ^ ranges,
+# runs tests, shows the diff), then commit bun.lock — the lockfile is a COPY
+# input, so a plain rebuild re-runs the install layer (no --no-cache needed).
 FROM docker.io/oven/bun:1-alpine AS build
 WORKDIR /app
 
-COPY package.json ./
-RUN bun install
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
 COPY . .
 RUN bun run build

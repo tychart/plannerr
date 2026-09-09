@@ -2,12 +2,13 @@
 
 React 19 + TypeScript (strict) + Vite + Tailwind CSS v4 SPA.
 
-**Package manager:** bun is the primary workflow. Dependency policy is
-**auto-update at build**: no lockfile is committed — the image build resolves
-the newest packages within the `^` ranges in `package.json` (see
-`Containerfile`). Locally, `bun install` generates a disposable, gitignored
-`bun.lock`; npm works the same way for node users (`npm install` /
-`npm run …`, gitignored `package-lock.json`).
+**Package manager:** bun is the primary workflow. Dependency policy matches
+the rest of the stack: **`bun.lock` is committed** and the image builds it
+frozen (`bun install --frozen-lockfile` in `Containerfile`). To update, add
+with `bun add <pkg>` or refresh everything within the `^` ranges with
+`scripts/refresh-web-deps.sh`, review the lock diff, and commit. npm works for
+node users (`npm install` / `npm run …`) — it derives its own gitignored
+`package-lock.json`, so it never touches the committed lock.
 
 ## Development
 
