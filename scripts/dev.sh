@@ -24,6 +24,13 @@
 #   disable. When the db is compose-managed its container logs are mirrored
 #   to .dev-logs/db.log so they join the follower too.
 #
+# Multi-window: only one stack can run at a time (fixed ports). Running bare
+# `dev.sh` again while one is up asks what to do — attach (follow that
+# instance's logs here), restart (stop it and take over; db stays up), or
+# quit. Ctrl-C stops the stack in the window that started/restarted it; in an
+# attached window it only ends that view. `logs | stop | down` work from any
+# window.
+#
 # Skips / tweaks (export before running):
 #   DEV_NO_DB=1 | DEV_NO_SERVER=1 | DEV_NO_WEB=1   skip that piece
 #   PM=bun | PM=npm                                force the web package manager
@@ -86,17 +93,25 @@ run_compose() { # word-split COMPOSE_CMD on purpose (may be "docker compose")
 }
 
 # --- helpers -----------------------------------------------------------------
-port_open() { # $1 host $2 port
-  (exec 3<>"/dev/tcp/$1/$2") 2>/dev/null && { exec 3>&- 3<&- 2>/dev/null || true; return 0; }
+port_open() { # $1 port — true if something listens on loopback (IPv4 or IPv6).
+  # Vite/uvicorn bind either ::1 or 127.0.0.1 depending on how localhost
+  # resolves, so probe both.
+  local p=$1 a
+  for a in 127.0.0.1 ::1; do
+    if (exec 3<>"/dev/tcp/$a/$p") 2>/dev/null; then
+      exec 3>&- 3<&- 2>/dev/null || true
+      return 0
+    fi
+  done
   return 1
 }
-wait_for_port() { # $1 host $2 port $3 tries $4 label ; returns 1 on timeout
-  local host=$1 port=$2 tries=$3 label=$4 i
+wait_for_port() { # $1 port $2 tries $3 label ; returns 1 on timeout
+  local p=$1 tries=$2 label=$3 i
   for ((i = 0; i < tries; i++)); do
-    port_open "$host" "$port" && { info "$label is up on $host:$port"; return 0; }
+    port_open "$p" && { info "$label is up on :$p"; return 0; }
     sleep 1
   done
-  warn "$label not reachable on $host:$port after ${tries}s"
+  warn "$label not reachable on :$p after ${tries}s"
   return 1
 }
 
@@ -114,32 +129,32 @@ ensure_env_files() {
 # --- pieces ------------------------------------------------------------------
 start_db() {
   [[ ${DEV_NO_DB:-0} == 1 ]] && { info "skipping db (DEV_NO_DB=1)"; return 0; }
-  if port_open 127.0.0.1 5432; then
+  if port_open 5432; then
     info "Postgres already up on :5432 — reusing it."
     return 0
   fi
   detect_compose || die "no podman-compose / docker found — start Postgres yourself and export DEV_NO_DB=1"
   info "starting database container: $COMPOSE_CMD up -d db"
   run_compose up -d db
-  if wait_for_port 127.0.0.1 5432 20 "database"; then return 0; fi
+  if wait_for_port 5432 20 "database"; then return 0; fi
   # A pre-existing container (e.g. from before compose.yml published :5432)
   # won't be reconfigured by a plain `up -d` — recreate it once.
   info "db container not publishing :5432 — recreating it to apply the port mapping"
   run_compose up -d --force-recreate db
-  wait_for_port 127.0.0.1 5432 45 "database" || die "database container is up but :5432 is unreachable"
+  wait_for_port 5432 45 "database" || die "database container is up but :5432 is unreachable"
 }
 
 migrate() {
   [[ ${DEV_NO_SERVER:-0} == 1 ]] && return 0
   command -v uv >/dev/null 2>&1 || return 0 # server start will explain if uv is missing
-  port_open 127.0.0.1 5432 || { warn "no database on :5432 — skipping migrations"; return 0; }
+  port_open 5432 || { warn "no database on :5432 — skipping migrations"; return 0; }
   info "applying migrations: uv run alembic upgrade head"
   (cd server && uv run alembic upgrade head)
 }
 
 start_server() {
   [[ ${DEV_NO_SERVER:-0} == 1 ]] && { info "skipping server (DEV_NO_SERVER=1)"; return 0; }
-  if port_open 127.0.0.1 8000; then
+  if port_open 8000; then
     warn "something already listens on :8000 — leaving it alone (DEV_NO_SERVER=1 to silence)."
     return 0
   fi
@@ -152,7 +167,7 @@ start_server() {
 
 start_web() {
   [[ ${DEV_NO_WEB:-0} == 1 ]] && { info "skipping web (DEV_NO_WEB=1)"; return 0; }
-  if port_open 127.0.0.1 5173; then
+  if port_open 5173; then
     warn "something already listens on :5173 — leaving it alone (DEV_NO_WEB=1 to silence)."
     return 0
   fi
@@ -256,13 +271,72 @@ _stream_reader() {
 follow() {
   # Tail server/web (and db when mirrored) logs — color-coded per stream on a
   # terminal, plain multi-file tail otherwise.
-  local logs=("$SERVER_LOG" "$WEB_LOG")
+  local logs=()
+  [[ -f $SERVER_LOG ]] && logs+=("$SERVER_LOG")
+  [[ -f $WEB_LOG ]] && logs+=("$WEB_LOG")
   [[ -f $DB_LOG ]] && logs+=("$DB_LOG")
+  ((${#logs[@]})) || die "no log files yet — start the stack first"
   if [[ -n $GRN ]]; then
     tail -n +1 -F "${logs[@]}" | _stream_reader
   else
     tail -n +1 -F "${logs[@]}"
   fi
+}
+
+running_pid() {
+  # First still-alive pid tracked in the pidfile (empty when no instance runs).
+  [[ -s $PID_FILE ]] || return 0
+  local pid
+  while read -r pid; do
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      printf '%s' "$pid"
+      return 0
+    fi
+  done <"$PID_FILE"
+  return 0
+}
+
+choose_existing_action() {
+  # Interactive menu for when a stack is already running elsewhere. Sets
+  # $existing_action to attach | restart | quit (attach is the default). On a
+  # non-TTY this never restarts or attaches — it leaves the stack alone.
+  local pid=$1 ans
+  existing_action=quit
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    info "a dev stack is already running (pid $pid) — non-interactive, leaving it alone."
+    info "use: scripts/dev.sh {logs,stop,down} (or run on a terminal for attach/restart)"
+    return 0
+  fi
+  echo
+  info "Plannerr dev stack is already running — started in another window (pid $pid)."
+  printf '%s\n' \
+    "  1) attach   — follow that instance's logs here (Ctrl-C ends only this view)" \
+    "  2) restart  — stop it and start fresh from this window (db stays up)" \
+    '  3) quit     — do nothing'
+  while :; do
+    printf '  choice [1/2/3, default 1]: '
+    IFS= read -r ans || ans=1
+    case "$ans" in
+      '' | 1) existing_action=attach; return 0 ;;
+      2) existing_action=restart; return 0 ;;
+      3) existing_action=quit; return 0 ;;
+      *) printf '  (pick 1, 2, or 3)\n' ;;
+    esac
+  done
+}
+
+kill_listeners() {
+  # Best-effort: after a restart, kill anything still bound to a port we are
+  # about to take over (only called on the explicit 'restart' choice).
+  command -v fuser >/dev/null 2>&1 || return 0
+  local p i
+  for p in "$@"; do
+    if port_open "$p"; then
+      info "port :$p still busy after stop — stopping the lingering process"
+      fuser -k "${p}/tcp" >/dev/null 2>&1 || true
+      for ((i = 0; i < 8; i++)); do port_open "$p" || break; sleep 0.5; done
+    fi
+  done
 }
 
 # --- lifecycle ----------------------------------------------------------------
@@ -279,6 +353,34 @@ cleanup() {
 start() {
   mkdir -p "$LOG_DIR"
   ensure_env_files
+
+  # Only one stack can run at a time (the ports are fixed). If another window
+  # is already running one, ask what to do instead of silently doing nothing.
+  local owner
+  owner="$(running_pid)"
+  if [[ -n "$owner" ]]; then
+    choose_existing_action "$owner"
+    case "$existing_action" in
+      quit)
+        info "leaving the running instance (pid $owner) alone."
+        exit 0
+        ;;
+      attach)
+        trap - INT TERM EXIT # Ctrl-C must NOT kill the other window's stack
+        start_db_log_mirror
+        info "attached to the running instance (pid $owner) — Ctrl-C ends only this view."
+        follow
+        exit 0
+        ;;
+      restart)
+        info "restarting the stack from this window (db stays up)…"
+        stop_dev
+        kill_listeners 8000 5173
+        ;;
+    esac
+  fi
+  rm -f "$PID_FILE" # stale pidfile from a dead instance
+
   start_db
   migrate
   start_server
@@ -342,9 +444,9 @@ down() {
 
 status() {
   local w a d
-  port_open 127.0.0.1 5173 && w=up || w=down
-  port_open 127.0.0.1 8000 && a=up || a=down
-  port_open 127.0.0.1 5432 && d=up || d=down
+  port_open 5173 && w=up || w=down
+  port_open 8000 && a=up || a=down
+  port_open 5432 && d=up || d=down
   printf '%-9s %s   %-8s %s   %-8s %s\n' 'web :5173' "$w" 'api :8000' "$a" 'db :5432' "$d"
   if detect_compose; then
     echo
