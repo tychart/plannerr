@@ -77,16 +77,20 @@ export function LinksView({ links }: LinksViewProps) {
   return (
     <ul className="flex flex-wrap gap-2">
       {links.map((link) => (
-        <li key={link.id}>
+        /* Each link becomes a pill capped at the container width. Every layer
+           of the flex chain needs min-w-0 so an unbroken long URL (or label)
+           shrinks and the span's ellipsis engages instead of shoving the pill
+           off-screen; the full URL stays available via the title tooltip. */
+        <li key={link.id} className="min-w-0 max-w-full">
           <a
             href={link.url}
             target="_blank"
             rel="noreferrer"
             title={link.url}
-            className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
-            <span className="truncate">{link.label || niceUrl(link.url)}</span>
+            <span className="min-w-0 truncate">{link.label || niceUrl(link.url)}</span>
           </a>
         </li>
       ))}
